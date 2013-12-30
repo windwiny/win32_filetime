@@ -1,6 +1,6 @@
 # Win32Filetime
 
-TODO: Write a gem description
+using FFI export win32 filetime api
 
 ## Installation
 
@@ -18,7 +18,8 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+    require 'win32ft'
+    create_time, access_time, modify_time = Win32ft.getfiletime(filename)
 
 ## Contributing
 

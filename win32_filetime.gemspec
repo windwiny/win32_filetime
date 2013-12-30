@@ -8,9 +8,9 @@ Gem::Specification.new do |spec|
   spec.version       = Win32Filetime::VERSION
   spec.authors       = ["windwiny"]
   spec.email         = ["windwiny.ubt@gmail.com"]
-  spec.description   = %q{TODO: Write a gem description}
-  spec.summary       = %q{TODO: Write a gem summary}
-  spec.homepage      = ""
+  spec.description   = %q{win32 filetime api}
+  spec.summary       = %q{win32 filetime api}
+  spec.homepage      = "https://github.com/windwiny/win32_filetime.git"
   spec.license       = "MIT"
 
   spec.files         = `git ls-files`.split($/)

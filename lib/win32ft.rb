@@ -187,6 +187,16 @@ module Win32ft
     ft = lft2ft(ft) if convlft2ft
     ft
   end
+  def self.str2ft(str, convlft2ft: false)
+    str = str[2..-1] if str[0...2] =~ /0[xX]/
+    h1 = str[0...8].to_i(16)
+    l1 = str[8..-1].to_i(16)
+    ft = FileTime.new
+    ft[:dwHighDateTime] = h1
+    ft[:dwLowDateTime] = l1
+    ft = lft2ft(ft) if convlft2ft
+    ft
+  end
   
   attach_function :GetSystemTime, [SystemTime.by_ref], :void
   def self.getsystemtime
@@ -265,6 +275,9 @@ CloseHandle(HANDLE)
     hf = CreateFileA(fn, CFflag::GENERIC_WRITE, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
         nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
     raise "setfiletime: Can not open file \"#{fn}\"" if hf == -1
+    tc = str2ft(tc) if String === tc
+    ta = str2ft(ta) if String === ta
+    tm = str2ft(tm) if String === tm
     res = SetFileTime(hf, tc, ta, tm)
     raise "setfiletime: SetFileTime error." if !res
     CloseHandle(hf)

@@ -1,0 +1,41 @@
+#!/usr/bin/env ruby -w
+# encoding: GBK
+
+require 'openssl'
+require 'win32ft'
+W = Win32ft
+
+trap "SIGINT" do
+  STDERR.puts "exit on Ctrl-C."
+  exit 1
+end
+
+def rolloldtime(d1, fn)
+  fn = File.absolute_path(fn)
+  Dir.chdir(d1) do
+    File.foreach(fn) do |line|
+      line.strip!
+      next if line.empty? || line[0] == '#'
+
+      p1 = line.index(/ 0x\w+ 0x\w+ 0x\w+ \d+/)
+      fn = line[0...p1]
+      next if !File.file?(fn) && !File.directory?(fn)
+
+      tc1,ta1,tm1,_sz1 = line[p1..-1].split
+      W.setfiletime(fn, tc1, ta1, tm1)
+    end
+  end
+end
+
+def main
+  if ARGV.size != 2
+    STDERR.puts "Syntax: restoreoldtimes.rb  Dir1 file.log"
+    exit 1
+  end
+  if !File.directory?(ARGV[0]) || !File.file?(ARGV[1])
+    STDERR.puts "Syntax:  Dir1  file.log.\n   using file.log restore directory files times"
+  end
+  rolloldtime(ARGV[0], ARGV[1])
+end
+
+main

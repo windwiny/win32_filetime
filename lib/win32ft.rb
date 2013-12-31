@@ -122,7 +122,7 @@ class HANDLE < FFI::Struct
   layout :handle, :uint
 end
 
-class CFflag
+module CFflag
   GENERIC_READ      = 0x80000000
   GENERIC_WRITE     = 0x40000000
   GENERIC_EXECUTE   = 0x20000000
@@ -149,6 +149,24 @@ class CFflag
   FILE_FLAG_OPEN_REPARSE_POINT    =0x00200000
   FILE_FLAG_OPEN_NO_RECALL        =0x00100000
   FILE_FLAG_FIRST_PIPE_INSTANCE   =0x00080000
+end
+
+module FA
+  FILE_ATTRIBUTE_READONLY                 =0x00000001
+  FILE_ATTRIBUTE_HIDDEN                   =0x00000002
+  FILE_ATTRIBUTE_SYSTEM                   =0x00000004
+  FILE_ATTRIBUTE_DIRECTORY                =0x00000010
+  FILE_ATTRIBUTE_ARCHIVE                  =0x00000020
+  FILE_ATTRIBUTE_DEVICE                   =0x00000040
+  FILE_ATTRIBUTE_NORMAL                   =0x00000080
+  FILE_ATTRIBUTE_TEMPORARY                =0x00000100
+  FILE_ATTRIBUTE_SPARSE_FILE              =0x00000200
+  FILE_ATTRIBUTE_REPARSE_POINT            =0x00000400
+  FILE_ATTRIBUTE_COMPRESSED               =0x00000800
+  FILE_ATTRIBUTE_OFFLINE                  =0x00001000
+  FILE_ATTRIBUTE_NOT_CONTENT_INDEXED      =0x00002000
+  FILE_ATTRIBUTE_ENCRYPTED                =0x00004000
+  FILE_ATTRIBUTE_VIRTUAL                  =0x00010000
 end
 
 module Win32ft
@@ -210,6 +228,8 @@ module Win32ft
     GetLocalTime(lt)
     lt
   end
+  attach_function :GetFileAttributes, :GetFileAttributesA, [:string], :ulong
+  attach_function :SetFileAttributes, :SetFileAttributesA, [:string, :ulong], :bool
   
 =begin
 CreateFileA("", GENERIC_READ,  FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0)
@@ -272,6 +292,8 @@ CloseHandle(HANDLE)
     ttts
   end
   def self.setfiletime(fn, tc, ta, tm)
+    fattr = GetFileAttributes(fn)
+    SetFileAttributes(fn, fattr & ~FA::FILE_ATTRIBUTE_READONLY) if fattr & FA::FILE_ATTRIBUTE_READONLY
     hf = CreateFileA(fn, CFflag::GENERIC_WRITE, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
         nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
     raise "setfiletime: Can not open file \"#{fn}\"" if hf == -1
@@ -281,6 +303,7 @@ CloseHandle(HANDLE)
     res = SetFileTime(hf, tc, ta, tm)
     raise "setfiletime: SetFileTime error." if !res
     CloseHandle(hf)
+    SetFileAttributes(fn, fattr) if fattr & FA::FILE_ATTRIBUTE_READONLY
     true
   end
   def self.copyfiletime(fn1, fn2)

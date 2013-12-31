@@ -300,4 +300,13 @@ describe "GetFileTime SetFileTime" do
     Dir.rmdir 'a' rescue nil
     Dir.rmdir 'b' rescue nil
   end
+  it "SetFileAttributes" do
+    fn = "1.txt"
+    File.write(fn, "asdfadsf")
+    tc, ta, tm = Win32ft.getfiletime(fn)
+    FileTime.should === tc
+    FileUtils.chmod(0000, fn)
+    Win32ft.setfiletime(fn, tc, ta, tm).should == true
+    FileUtils.rm(fn)
+  end
 end

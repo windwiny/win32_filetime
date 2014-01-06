@@ -9,7 +9,7 @@ Gem::Specification.new do |spec|
   spec.authors       = ["windwiny"]
   spec.email         = ["windwiny.ubt@gmail.com"]
   spec.description   = %q{win32 filetime api}
-  spec.summary       = %q{win32 filetime api}
+  spec.summary       = %q{win32 filetime api.}
   spec.homepage      = "https://github.com/windwiny/win32_filetime.git"
   spec.license       = "MIT"
 

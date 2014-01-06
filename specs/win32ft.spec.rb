@@ -1,6 +1,6 @@
 # encoding: GBK
 
-require"win32ft"
+require_relative "../lib/win32ft"
 
 describe "FileTime" do
   it "new FileTime instance should ==" do
@@ -121,8 +121,8 @@ describe "File Create Read Write Flush Close GetFileSizeEx" do
     @msg = Time.now.to_s + " asfas f;asjf;lasdfj;s af;alsj f"
   end
     
-  it "CreateFileA WriteFile CloseHandle GetFileSizeEx" do
-    hf = Win32ft.CreateFileA(@fn1, CFflag::GENERIC_WRITE,
+  it "CreateFile WriteFile CloseHandle GetFileSizeEx" do
+    hf = Win32ft.CreateFile(@fn1, CFflag::GENERIC_WRITE,
        CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
        nil, CFflag::OPEN_ALWAYS, 0, 0)
     hf.should satisfy { |obj| obj.is_a? Fixnum }
@@ -141,7 +141,7 @@ describe "File Create Read Write Flush Close GetFileSizeEx" do
   it "ReadFile" do
     buffer = FFI::MemoryPointer.new :char, @msg.bytesize*2
     rded = FFI::MemoryPointer.new :uint32, 1
-    hf = Win32ft.CreateFileA(@fn1, CFflag::GENERIC_READ,
+    hf = Win32ft.CreateFile(@fn1, CFflag::GENERIC_READ,
        CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
        nil, CFflag::OPEN_EXISTING, 0, 0)
     hf.should satisfy { |obj| obj.is_a? Fixnum }
@@ -155,10 +155,10 @@ describe "File Create Read Write Flush Close GetFileSizeEx" do
   it "ReadFile no exist file" do
     Dir.mkdir "c:\\tmp" rescue nil
     fn = "c:\\tmp\\noexist.txt"
-    hf = Win32ft.CreateFileA(fn, CFflag::GENERIC_READ,
+    hf = Win32ft.CreateFile(fn, CFflag::GENERIC_READ,
        CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
        nil, CFflag::OPEN_EXISTING, 0, 0)
-    hf.should == -1
+    hf.should == CFflag::INVALID_HANDLE_VALUE
   end
   
   it "getfilesize" do

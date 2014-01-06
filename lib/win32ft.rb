@@ -149,6 +149,8 @@ module CFflag
   FILE_FLAG_OPEN_REPARSE_POINT    =0x00200000
   FILE_FLAG_OPEN_NO_RECALL        =0x00100000
   FILE_FLAG_FIRST_PIPE_INSTANCE   =0x00080000
+
+  INVALID_HANDLE_VALUE            =0xFFFFFFFF
 end
 
 module FA
@@ -174,9 +176,9 @@ module Win32ft
   ffi_lib 'msvcrt', 'kernel32'
   ffi_convention :stdcall
   
-  attach_function :GetFileType, [:int], :int
-  attach_function :GetLastError, [], :int
-  attach_function :FormatMessageA, [:int, :pointer, :int, :int, :string, :int, :pointer], :int
+  attach_function :GetFileType, [:ulong], :int
+  attach_function :GetLastError, [], :uint
+  attach_function :FormatMessage, :FormatMessageA, [:uint, :pointer, :uint, :uint, :string, :uint, :pointer], :int
   
   attach_function :FileTimeToLocalFileTime, [FileTime.by_ref, FileTime.by_ref], :bool
   attach_function :LocalFileTimeToFileTime, [FileTime.by_ref, FileTime.by_ref], :bool
@@ -228,12 +230,12 @@ module Win32ft
     GetLocalTime(lt)
     lt
   end
-  attach_function :GetFileAttributes, :GetFileAttributesA, [:string], :ulong
-  attach_function :SetFileAttributes, :SetFileAttributesA, [:string, :ulong], :bool
+  attach_function :GetFileAttributes, :GetFileAttributesA, [:string], :uint
+  attach_function :SetFileAttributes, :SetFileAttributesA, [:string, :uint], :bool
   
 =begin
-CreateFileA("", GENERIC_READ,  FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0)
-CreateFileA("", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0)
+CreateFile("", GENERIC_READ,  FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0)
+CreateFile("", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0)
 
    LPCSTR  lpFileName,             # "filename"
    DWORD   dwDesiredAccess,        # GENERIC_READ / GENERIC_WRITE / GENERIC_EXECUTE / GENERIC_ALL
@@ -265,22 +267,22 @@ FlushFileBuffers(HANDLE)
 
 CloseHandle(HANDLE)
 =end
-  attach_function :CreateFileA, [:string, :uint, :uint, :pointer, :uint, :uint, :int], :int
-  attach_function :ReadFile, [:int, :pointer, :uint, :pointer, :pointer], :bool
-  attach_function :WriteFile, [:int, :pointer, :uint, :pointer, :pointer], :bool
+  attach_function :CreateFile, :CreateFileA, [:string, :uint, :uint, :pointer, :uint, :uint, :int], :ulong
+  attach_function :ReadFile, [:ulong, :pointer, :uint, :pointer, :pointer], :bool
+  attach_function :WriteFile, [:ulong, :pointer, :uint, :pointer, :pointer], :bool
   attach_function :DeleteFile, :DeleteFileA, [:string], :bool
-  attach_function :FlushFileBuffers, [:int], :bool
-  attach_function :CloseHandle, [:int], :bool
+  attach_function :FlushFileBuffers, [:ulong], :bool
+  attach_function :CloseHandle, [:ulong], :bool
   
-  attach_function :GetFileTime, [:int, FileTime.by_ref, FileTime.by_ref, FileTime.by_ref], :bool
-  attach_function :SetFileTime, [:int, FileTime.by_ref, FileTime.by_ref, FileTime.by_ref], :bool
+  attach_function :GetFileTime, [:ulong, FileTime.by_ref, FileTime.by_ref, FileTime.by_ref], :bool
+  attach_function :SetFileTime, [:ulong, FileTime.by_ref, FileTime.by_ref, FileTime.by_ref], :bool
   def self.getfiletime(fn, getsize: false)
     size = Large_Integer.new if getsize
     tc, ta, tm = FileTime.new, FileTime.new, FileTime.new
     ttts = [tc, ta, tm]
-    hf = CreateFileA(fn, CFflag::GENERIC_READ, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
+    hf = CreateFile(fn, CFflag::GENERIC_READ, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
         nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
-    raise "getfiletime: Can not open file \"#{fn}\"" if hf == -1
+    raise "getfiletime: Can not open file \"#{fn}\"" if hf == CFflag::INVALID_HANDLE_VALUE
     res = GetFileTime(hf, tc, ta, tm)
     raise "getfiletime: GetFileTime error." if !res
     if getsize
@@ -294,9 +296,9 @@ CloseHandle(HANDLE)
   def self.setfiletime(fn, tc, ta, tm)
     fattr = GetFileAttributes(fn)
     SetFileAttributes(fn, fattr & ~FA::FILE_ATTRIBUTE_READONLY) if fattr & FA::FILE_ATTRIBUTE_READONLY
-    hf = CreateFileA(fn, CFflag::GENERIC_WRITE, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
+    hf = CreateFile(fn, CFflag::GENERIC_WRITE, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
         nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
-    raise "setfiletime: Can not open file \"#{fn}\"" if hf == -1
+    raise "setfiletime: Can not open file \"#{fn}\"" if hf == CFflag::INVALID_HANDLE_VALUE
     tc = str2ft(tc) if String === tc
     ta = str2ft(ta) if String === ta
     tm = str2ft(tm) if String === tm
@@ -323,11 +325,11 @@ CloseHandle(HANDLE)
     tt
   end
   
-  attach_function :GetFileSizeEx, [:int, Large_Integer.by_ref], :bool
+  attach_function :GetFileSizeEx, [:ulong, Large_Integer.by_ref], :bool
   def self.getfilesize(fn)
-    hf = CreateFileA(fn, CFflag::GENERIC_READ, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
+    hf = CreateFile(fn, CFflag::GENERIC_READ, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
         nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
-    raise "getfilesize: Can not open file \"#{fn}\"" if hf == -1
+    raise "getfilesize: Can not open file \"#{fn}\"" if hf == CFflag::INVALID_HANDLE_VALUE
     size = Large_Integer.new
     res = GetFileSizeEx(hf, size)
     raise "getfilesize: GetFileSizeEx error." if !res

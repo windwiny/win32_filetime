@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby -w
 # encoding: GBK
 
-require 'win32ft'
+require 'win32_filetime'
 require "dirwalk"
 
 G = {

@@ -4,10 +4,10 @@
 require "win32_filetime/version"
 require "ffi"
 
-class FileTime < FFI::Struct
+class Win32Filetime::FileTime < FFI::Struct
   layout :dwLowDateTime, :uint,
           :dwHighDateTime, :uint
-  
+
   include Comparable
   def <=>(other)
     s1 = self[:dwHighDateTime] << 32 | self[:dwLowDateTime]
@@ -47,7 +47,7 @@ class FileTime < FFI::Struct
   end
 end
 
-class SystemTime < FFI::Struct
+class Win32Filetime::SystemTime < FFI::Struct
   layout :wYear, :ushort,
           :wMonth, :ushort,
           :wDayOfWeek, :ushort,
@@ -88,7 +88,7 @@ class SystemTime < FFI::Struct
   end
 end
 
-class Large_Integer < FFI::Struct
+class Win32Filetime::Large_Integer < FFI::Struct
   layout :LowPart, :uint,
           :HighPart, :uint
 
@@ -118,11 +118,11 @@ class Large_Integer < FFI::Struct
   end
 end
 
-class HANDLE < FFI::Struct
+class Win32Filetime::HANDLE < FFI::Struct
   layout :handle, :uint
 end
 
-module CFflag
+module Win32Filetime::CFflag
   GENERIC_READ      = 0x80000000
   GENERIC_WRITE     = 0x40000000
   GENERIC_EXECUTE   = 0x20000000
@@ -153,7 +153,7 @@ module CFflag
   INVALID_HANDLE_VALUE            =0xFFFFFFFF
 end
 
-module FA
+module Win32Filetime::FA
   FILE_ATTRIBUTE_READONLY                 =0x00000001
   FILE_ATTRIBUTE_HIDDEN                   =0x00000002
   FILE_ATTRIBUTE_SYSTEM                   =0x00000004
@@ -171,15 +171,15 @@ module FA
   FILE_ATTRIBUTE_VIRTUAL                  =0x00010000
 end
 
-module Win32ft
+module Win32Filetime
   extend FFI::Library
   ffi_lib 'msvcrt', 'kernel32'
   ffi_convention :stdcall
-  
+
   attach_function :GetFileType, [:ulong], :int
   attach_function :GetLastError, [], :uint
   attach_function :FormatMessage, :FormatMessageA, [:uint, :pointer, :uint, :uint, :string, :uint, :pointer], :int
-  
+
   attach_function :FileTimeToLocalFileTime, [FileTime.by_ref, FileTime.by_ref], :bool
   attach_function :LocalFileTimeToFileTime, [FileTime.by_ref, FileTime.by_ref], :bool
   def self.ft2lft(ft)
@@ -192,7 +192,7 @@ module Win32ft
     LocalFileTimeToFileTime(lft, ft)
     ft
   end
-  
+
   attach_function :FileTimeToSystemTime, [FileTime.by_ref, SystemTime.by_ref], :bool
   attach_function :SystemTimeToFileTime, [SystemTime.by_ref, FileTime.by_ref], :bool
   def self.ft2st(ft, convft2lft: false)
@@ -217,7 +217,7 @@ module Win32ft
     ft = lft2ft(ft) if convlft2ft
     ft
   end
-  
+
   attach_function :GetSystemTime, [SystemTime.by_ref], :void
   def self.getsystemtime
     st = SystemTime.new
@@ -232,7 +232,7 @@ module Win32ft
   end
   attach_function :GetFileAttributes, :GetFileAttributesA, [:string], :uint
   attach_function :SetFileAttributes, :SetFileAttributesA, [:string, :uint], :bool
-  
+
 =begin
 CreateFile("", GENERIC_READ,  FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0)
 CreateFile("", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0)
@@ -244,7 +244,7 @@ CreateFile("", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTI
    DWORD   dwCreationDisposition,  # CREATE_NEW / CREATE_ALWAYS / OPEN_EXISTING / OPEN_ALWAYS / TRUNCATE_EXISTING
    DWORD   dwFlagsAndAttributes,   # 0 | FILE_FLAG_BACKUP_SEMANTICS if dir
    HANDLE  hTemplateFile           # 0
-       
+
 ReadFile(
     HANDLE,
     buf,      # FFI::MemoryPointer.new(:char, 100)
@@ -273,7 +273,7 @@ CloseHandle(HANDLE)
   attach_function :DeleteFile, :DeleteFileA, [:string], :bool
   attach_function :FlushFileBuffers, [:ulong], :bool
   attach_function :CloseHandle, [:ulong], :bool
-  
+
   attach_function :GetFileTime, [:ulong, FileTime.by_ref, FileTime.by_ref, FileTime.by_ref], :bool
   attach_function :SetFileTime, [:ulong, FileTime.by_ref, FileTime.by_ref, FileTime.by_ref], :bool
   def self.getfiletime(fn, getsize: false)
@@ -324,7 +324,7 @@ CloseHandle(HANDLE)
     tt = (wintt - 116444736000000000) / 10**7.0
     tt
   end
-  
+
   attach_function :GetFileSizeEx, [:ulong, Large_Integer.by_ref], :bool
   def self.getfilesize(fn)
     hf = CreateFile(fn, CFflag::GENERIC_READ, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
@@ -337,3 +337,5 @@ CloseHandle(HANDLE)
     size.to_i
   end
 end
+
+Win32ft = Win32Filetime

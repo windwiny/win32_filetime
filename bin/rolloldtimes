@@ -2,7 +2,7 @@
 # encoding: GBK
 
 require 'openssl'
-require 'win32ft'
+require 'win32_filetime'
 W = Win32ft
 
 trap "SIGINT" do
@@ -20,15 +20,19 @@ def getmd5(fn)
   md5.hexdigest
 end
 
-def rolloldtime(d1, d2)
-  fs1 = Dir.chdir(d1) { Dir.glob '*' }
-  fs2 = Dir.chdir(d2) { Dir.glob '*' }
+def rolloldtime(dir_from, dir_to)
+  c_ds = 1
+  c_fs = 0
+  fs1 = Dir.chdir(dir_from) { Dir.glob '*' }
+  fs2 = Dir.chdir(dir_to) { Dir.glob '*' }
   fs = fs1 & fs2
   fs.each do |fn|
-    f1 = File.join d1,fn
-    f2 = File.join d2,fn
+    f1 = File.join dir_from,fn
+    f2 = File.join dir_to,fn
     if File.directory?(f1) && File.directory?(f2)
-      rolloldtime(f1, f2)
+      _d1, _f1 = rolloldtime(f1, f2)
+      c_ds += _d1
+      c_fs += _f1
     elsif File.file?(f1) && File.file?(f2)
       begin
         tc1, ta1, tm1, sz1 = W.getfiletime(f1, getsize: true)
@@ -50,22 +54,25 @@ def rolloldtime(d1, d2)
             end
           end
         end
+        c_fs += 1
       rescue Exception => e
         STDERR.puts e
       end
     end
   end
+  [c_ds, c_fs]
 end
 
 def main
   if ARGV.size != 2
-    STDERR.puts "Syntax: rolloldtimes.rb  Dir1 Dir2"
+    STDERR.puts "Syntax: rolloldtimes.rb  dir_from  dir_to"
     exit 1
   end
   if !File.directory?(ARGV[0]) || !File.directory?(ARGV[1])
-    STDERR.puts "Syntax:  Dir1 Dir2  must be directory"
+    STDERR.puts "Syntax:  Dir_from  Dir_to  must be directory"
   end
-  rolloldtime(ARGV[0], ARGV[1])
+  c_ds, c_fs = rolloldtime(ARGV[0], ARGV[1])
+  STDERR.puts " Restoreoldtimes \"#{ARGV[0]}\" -> \"#{ARGV[1]}\".  dirs: #{c_ds}  files: #{c_fs}"
 end
 
 main

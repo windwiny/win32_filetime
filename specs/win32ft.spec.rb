@@ -1,6 +1,7 @@
 # encoding: GBK
 
-require_relative "../lib/win32ft"
+require_relative "../lib/win32_filetime"
+include Win32Filetime
 
 describe "FileTime" do
   it "new FileTime instance should ==" do

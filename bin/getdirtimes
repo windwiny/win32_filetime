@@ -10,7 +10,8 @@ G = {
   :prprog => true,
   :BS => '',
   :WS => '',
-  :auto_fn => false,
+  :autofn => false,
+  :show_datetimestr => false,
   }
 
 trap "SIGINT" do
@@ -40,13 +41,21 @@ def prdi(di)
     p.gsub!('/', "\\")
     $ids += 1
     tc, ta, tm = Win32ft.getfiletime(p)
-    puts "#{p}\\ #{tc} #{ta} #{tm} 0"
+    if G[:show_datetimestr]
+      puts "#{p}\\ #{tc.to_s2} #{ta.to_s2} #{tm.to_s2} 0"
+    else
+      puts "#{p}\\ #{tc.to_s} #{ta.to_s} #{tm.to_s} 0"
+    end
     fs.each do |fn|
       fn = File.join(p, fn)
       fn.gsub!('/', "\\")
       $ifs += 1
       tc, ta, tm, sz= Win32ft.getfiletime(fn, getsize: true)
-      puts "#{fn} #{tc} #{ta} #{tm} #{sz}"
+      if G[:show_datetimestr]
+        puts "#{fn} #{tc.to_s2} #{ta.to_s2} #{tm.to_s2} #{sz}"
+      else
+        puts "#{fn} #{tc.to_s} #{ta.to_s} #{tm.to_s} #{sz}"
+      end
     end
     if G[:prprog]
       ts = Time.now
@@ -63,10 +72,14 @@ def prdi(di)
 end
 
 def main
-  if ARGV.include?('-o')
-    G[:autofn] = true
-    ARGV.delete('-o')
+  if (ARGV & %w{-h --help}).size > 0
+    STDERR.puts "Syntax: getdirtimes.rb  Dir1 > file.log  [ -s ]\n\n  -s   output \"YYYY-mm-dd HH:MM:SS.UUU\" instead of 0x1234567812345678"
+    exit 1
   end
+
+  G[:autofn] = ARGV.delete('-o') ? true : false
+  G[:show_datetimestr] = ARGV.delete('-s') ? true : false
+
   ARGV.each do |fn|
     fn = File.absolute_path(fn)
     if File.directory? fn

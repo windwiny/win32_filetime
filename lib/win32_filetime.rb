@@ -39,11 +39,28 @@ class Win32Filetime::FileTime < FFI::Struct
   def to_s
     "0x%08X%08X" % [self[:dwHighDateTime], self[:dwLowDateTime]]
   end
+  def to_s2
+    Win32Filetime.ft2st(Win32Filetime.ft2lft(self)).to_s
+  end
+  def minus year:nil,month:nil,day:nil,hour:nil,minute:nil,second:nil,millisecond:nil
+    st = Win32Filetime.ft2st(self)
+    st[:wYear] -= year if year
+    st[:wMonth] -= month if month
+    st[:wDay] -= day if day
+    st[:wHour] -= hour if hour
+    st[:wMinute] -= minute if minute
+    st[:wSecond] -= second if second
+    st[:wMilliseconds] -= millisecond if millisecond
+    Win32Filetime.st2ft(st)
+  end
   def inspect
     to_s
   end
   def to_i
     ((self[:dwHighDateTime] << 32 | self[:dwLowDateTime]) - 116444736000000000) / 10**7.0
+  end
+  def to_st
+    Win32Filetime.ft2st(self)
   end
 end
 
@@ -85,6 +102,9 @@ class Win32Filetime::SystemTime < FFI::Struct
   end
   def inspect
     to_s
+  end
+  def to_ft
+    Win32Filetime.st2ft(self)
   end
 end
 
@@ -208,12 +228,27 @@ module Win32Filetime
     ft
   end
   def self.str2ft(str, convlft2ft: false)
-    str = str[2..-1] if str[0...2] =~ /0[xX]/
-    h1 = str[0...8].to_i(16)
-    l1 = str[8..-1].to_i(16)
-    ft = FileTime.new
-    ft[:dwHighDateTime] = h1
-    ft[:dwLowDateTime] = l1
+    str.strip!
+    if str =~ /^0[xX]/
+      str = str[2..-1]
+      h1 = str[0...8].to_i(16)
+      l1 = str[8..-1].to_i(16)
+      ft = FileTime.new
+      ft[:dwHighDateTime] = h1
+      ft[:dwLowDateTime] = l1
+    elsif str=~/(\d{4})\-(\d{2})\-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d+)/
+      st = SystemTime.new
+      wYear,wMonth,wDay,wHour,wMinute,wSecond,wMilliseconds = $1,$2,$3,$4,$5,$6,$7
+      st[:wYear] = wYear.to_i
+      st[:wMonth] = wMonth.to_i
+      st[:wDay] = wDay.to_i
+      st[:wHour] = wHour.to_i
+      st[:wMinute] = wMinute.to_i
+      st[:wSecond] = wSecond.to_i
+      st[:wMilliseconds] = wMilliseconds.to_i
+      ft = Win32Filetime.st2ft(st)
+      convlft2ft = true
+    end
     ft = lft2ft(ft) if convlft2ft
     ft
   end

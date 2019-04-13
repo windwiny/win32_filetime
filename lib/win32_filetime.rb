@@ -11,7 +11,7 @@ class Win32Filetime::FileTime < FFI::Struct
   include Comparable
   
   def initialize ival=nil
-    super
+    super()
     if ival
       ival = ival.to_i if String === ival
       self[:dwLowDateTime] = ival & 0xFFFFFFFF

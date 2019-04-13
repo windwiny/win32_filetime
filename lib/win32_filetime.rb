@@ -9,6 +9,16 @@ class Win32Filetime::FileTime < FFI::Struct
           :dwHighDateTime, :uint
 
   include Comparable
+  
+  def initialize ival=nil
+    super
+    if ival
+      ival = ival.to_i if String === ival
+      self[:dwLowDateTime] = ival & 0xFFFFFFFF
+      self[:dwHighDateTime] = (ival >> 32) & 0xFFFFFFFF
+    end
+  end
+  
   def <=>(other)
     s1 = self[:dwHighDateTime] << 32 | self[:dwLowDateTime]
     o1 = other[:dwHighDateTime] << 32 | other[:dwLowDateTime]
@@ -30,18 +40,23 @@ class Win32Filetime::FileTime < FFI::Struct
       false
     end
   end
+
   def equal?(other)
     self == other
   end
+
   def eql?(other)
     self == other
   end
+
   def to_s
     "0x%08X%08X" % [self[:dwHighDateTime], self[:dwLowDateTime]]
   end
+
   def to_s2
     Win32Filetime.ft2st(Win32Filetime.ft2lft(self)).to_s
   end
+
   def minus year:nil,month:nil,day:nil,hour:nil,minute:nil,second:nil,millisecond:nil
     st = Win32Filetime.ft2st(self)
     st[:wYear] -= year if year
@@ -53,15 +68,19 @@ class Win32Filetime::FileTime < FFI::Struct
     st[:wMilliseconds] -= millisecond if millisecond
     Win32Filetime.st2ft(st)
   end
+
   def inspect
     to_s
   end
+
   def to_i
     ((self[:dwHighDateTime] << 32 | self[:dwLowDateTime]) - 116444736000000000) / 10**7.0
   end
+
   def to_st
     Win32Filetime.ft2st(self)
   end
+
 end
 
 class Win32Filetime::SystemTime < FFI::Struct
@@ -89,23 +108,29 @@ class Win32Filetime::SystemTime < FFI::Struct
       false
     end
   end
+
   def equal?(other)
     self == other
   end
+
   def eql?(other)
     self == other
   end
+
   def to_s
     "%04d-%02d-%02d %02d:%02d:%02d.%d" % [
       self[:wYear],self[:wMonth],self[:wDay],self[:wHour],self[:wMinute],self[:wSecond],self[:wMilliseconds]
     ]
   end
+
   def inspect
     to_s
   end
+
   def to_ft
     Win32Filetime.st2ft(self)
   end
+
 end
 
 class Win32Filetime::Large_Integer < FFI::Struct
@@ -121,21 +146,27 @@ class Win32Filetime::Large_Integer < FFI::Struct
       false
     end
   end
+
   def equal?(other)
     self == other
   end
+
   def eql?(other)
     self == other
   end
+
   def to_i
     self[:HighPart] << 32 | self[:LowPart]
   end
+
   def to_s
     to_i.to_s
   end
+
   def inspect
     to_i.to_s
   end
+
 end
 
 class Win32Filetime::HANDLE < FFI::Struct
@@ -193,7 +224,9 @@ end
 
 module Win32Filetime
   extend FFI::Library
+
   ffi_lib 'msvcrt', 'kernel32'
+
   ffi_convention :stdcall
 
   attach_function :GetFileType, [:ulong], :int
@@ -202,11 +235,13 @@ module Win32Filetime
 
   attach_function :FileTimeToLocalFileTime, [FileTime.by_ref, FileTime.by_ref], :bool
   attach_function :LocalFileTimeToFileTime, [FileTime.by_ref, FileTime.by_ref], :bool
+
   def self.ft2lft(ft)
     lft = FileTime.new
     FileTimeToLocalFileTime(ft, lft)
     lft
   end
+
   def self.lft2ft(lft)
     ft = FileTime.new
     LocalFileTimeToFileTime(lft, ft)
@@ -215,18 +250,21 @@ module Win32Filetime
 
   attach_function :FileTimeToSystemTime, [FileTime.by_ref, SystemTime.by_ref], :bool
   attach_function :SystemTimeToFileTime, [SystemTime.by_ref, FileTime.by_ref], :bool
+
   def self.ft2st(ft, convft2lft: false)
     ft = ft2lft(ft) if convft2lft
     st = SystemTime.new
     FileTimeToSystemTime(ft, st)
     st
   end
+
   def self.st2ft(st, convlft2ft: false)
     ft = FileTime.new
     SystemTimeToFileTime(st, ft)
     ft = lft2ft(ft) if convlft2ft
     ft
   end
+
   def self.str2ft(str, convlft2ft: false)
     str.strip!
     if str =~ /^0[xX]/
@@ -253,13 +291,24 @@ module Win32Filetime
     ft
   end
 
+  def self.int2ft(ival, convlft2ft: false)
+    ft = FileTime.new
+    ft[:dwLowDateTime] = ival & 0xFFFFFFFF
+    ft[:dwHighDateTime] = (ival >> 32) & 0xFFFFFFFF
+    ft = lft2ft(ft) if convlft2ft
+    ft
+  end
+
   attach_function :GetSystemTime, [SystemTime.by_ref], :void
+
   def self.getsystemtime
     st = SystemTime.new
     GetSystemTime(st)
     st
   end
+
   attach_function :GetLocalTime, [SystemTime.by_ref], :void
+
   def self.getlocaltime
     lt = SystemTime.new
     GetLocalTime(lt)
@@ -302,6 +351,7 @@ FlushFileBuffers(HANDLE)
 
 CloseHandle(HANDLE)
 =end
+
   attach_function :CreateFile, :CreateFileA, [:string, :uint, :uint, :pointer, :uint, :uint, :int], :ulong
   attach_function :ReadFile, [:ulong, :pointer, :uint, :pointer, :pointer], :bool
   attach_function :WriteFile, [:ulong, :pointer, :uint, :pointer, :pointer], :bool
@@ -311,6 +361,7 @@ CloseHandle(HANDLE)
 
   attach_function :GetFileTime, [:ulong, FileTime.by_ref, FileTime.by_ref, FileTime.by_ref], :bool
   attach_function :SetFileTime, [:ulong, FileTime.by_ref, FileTime.by_ref, FileTime.by_ref], :bool
+
   def self.getfiletime(fn, getsize: false)
     size = Large_Integer.new if getsize
     tc, ta, tm = FileTime.new, FileTime.new, FileTime.new
@@ -328,6 +379,9 @@ CloseHandle(HANDLE)
     CloseHandle(hf)
     ttts
   end
+
+  # filename
+  # tc,ta,tm  FileTime/ 16x String / Integer
   def self.setfiletime(fn, tc, ta, tm)
     fattr = GetFileAttributes(fn)
     SetFileAttributes(fn, fattr & ~FA::FILE_ATTRIBUTE_READONLY) if fattr & FA::FILE_ATTRIBUTE_READONLY
@@ -337,16 +391,21 @@ CloseHandle(HANDLE)
     tc = str2ft(tc) if String === tc
     ta = str2ft(ta) if String === ta
     tm = str2ft(tm) if String === tm
+    tc = int2ft(tc) if Integer === tc
+    ta = int2ft(ta) if Integer === ta
+    tm = int2ft(tm) if Integer === tm
     res = SetFileTime(hf, tc, ta, tm)
     raise "setfiletime: SetFileTime error." if !res
     CloseHandle(hf)
     SetFileAttributes(fn, fattr) if fattr & FA::FILE_ATTRIBUTE_READONLY
     true
   end
+
   def self.copyfiletime(fn1, fn2)
     tc1, ta1, tm1 = getfiletime(fn1)
     setfiletime(fn2, tc1, ta1, tm1)
   end
+
   def self.double2ft(tt)
     wintt = (tt * 10**7 + 116444736000000000).to_i
     ft = FileTime.new
@@ -354,6 +413,7 @@ CloseHandle(HANDLE)
     ft[:dwLowDateTime] = wintt & 0xFFFFFFFF
     ft
   end
+
   def self.ft2double(ft)
     wintt = ft[:dwHighDateTime] << 32 | ft[:dwLowDateTime]
     tt = (wintt - 116444736000000000) / 10**7.0
@@ -361,6 +421,7 @@ CloseHandle(HANDLE)
   end
 
   attach_function :GetFileSizeEx, [:ulong, Large_Integer.by_ref], :bool
+
   def self.getfilesize(fn)
     hf = CreateFile(fn, CFflag::GENERIC_READ, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
         nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
@@ -371,6 +432,7 @@ CloseHandle(HANDLE)
     CloseHandle(hf)
     size.to_i
   end
+
 end
 
 Win32ft = Win32Filetime

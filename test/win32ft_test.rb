@@ -1,52 +1,5 @@
 # encoding: GBK
-
-require_relative "../lib/win32_filetime"
-include Win32Filetime
-
-describe "FileTime" do
-  it "new FileTime instance should ==" do
-    FileTime.new.should == FileTime.new
-  end
-  it "new FileTime instance should equal" do
-    FileTime.new.should equal(FileTime.new)
-  end
-  it "new FileTime instance should eql" do
-    FileTime.new.should eql(FileTime.new)
-  end
-  it "new FileTime instance should eq" do
-    FileTime.new.should eq(FileTime.new)
-  end
-end
-
-describe "SystemTime" do
-  it "new SystemTime instance should ==" do
-    SystemTime.new.should == SystemTime.new
-  end
-  it "new SystemTime instance should equal" do
-    SystemTime.new.should equal(SystemTime.new)
-  end
-  it "new SystemTime instance should eql" do
-    SystemTime.new.should eql(SystemTime.new)
-  end
-  it "new SystemTime instance should eq" do
-    SystemTime.new.should eq(SystemTime.new)
-  end
-end
-
-describe "Large_Integer" do
-  it "new Large_Integer instance should ==" do
-    Large_Integer.new.should == Large_Integer.new
-  end
-  it "new Large_Integer instance should equal" do
-    Large_Integer.new.should equal(Large_Integer.new)
-  end
-  it "new SystemTime instance should eql" do
-    Large_Integer.new.should eql(Large_Integer.new)
-  end
-  it "new SystemTime instance should eq" do
-    Large_Integer.new.should eq(Large_Integer.new)
-  end
-end
+require 'test_helper'
 
 describe "GetLastError" do
   it "get last erro " do
@@ -63,8 +16,8 @@ describe "FileTime LocalFileTime" do
     ft2 = Win32ft.ft2lft(ft1)
     ft3 = Win32ft.lft2ft(ft2)
     
-    ft1[:dwHighDateTime].should == ft3[:dwHighDateTime]
-    ft1[:dwLowDateTime].should == ft3[:dwLowDateTime]
+    assert_equal(ft1[:dwHighDateTime], ft3[:dwHighDateTime])
+    assert_equal(ft1[:dwLowDateTime], ft3[:dwLowDateTime])
   end
 end
 
@@ -74,30 +27,30 @@ describe "FileTime SystemTime" do
     ft1[:dwHighDateTime], ft1[:dwLowDateTime] = 0x01CCF838, 0x1F2B7320
     st1 = Win32ft.ft2st(ft1)
     ft3 = Win32ft.st2ft(st1)
-    ft1[:dwHighDateTime].should == ft3[:dwHighDateTime]
-    ft1[:dwLowDateTime].should == ft3[:dwLowDateTime]
+    assert_equal(ft1[:dwHighDateTime], ft3[:dwHighDateTime])
+    assert_equal(ft1[:dwLowDateTime], ft3[:dwLowDateTime])
   end
 end
 
 describe "GetSystemTime" do
   it "getsystemtime is_a? SystemTime" do
     t1 = Win32ft.getsystemtime
-    t1.should satisfy { |st| st.is_a? SystemTime}
+    assert_instance_of(SystemTime, t1)
   end
   it "getsystemtime [:wYear] == current year" do
     t1 = Win32ft.getsystemtime
-    t1[:wYear].should == Time.now.year
+    assert_equal(t1[:wYear], Time.now.year)
   end
 end
 
 describe "GetLocalTime" do
   it "getlocaltime is_a? SystemTime" do
     t1 = Win32ft.getlocaltime
-    t1.should satisfy { |st| st.is_a? SystemTime}
+    assert_instance_of(SystemTime, t1)
   end
   it "getlocaltime [:wYear] == current year" do
     t1 = Win32ft.getlocaltime
-    t1[:wYear].should == Time.now.year
+    assert_equal(t1[:wYear], Time.now.year)
   end
 end
 
@@ -109,84 +62,89 @@ describe "GetLocalTime GetSystemTime" do
                   st1[:wMinute], st1[:wSecond]
     t2 = Time.local lt1[:wYear], lt1[:wMonth], lt1[:wDay], lt1[:wHour], 
                   lt1[:wMinute], lt1[:wSecond]
-    t1.should == t2
+    assert_equal(t1, t2)
   end
 end
 
 
 describe "File Create Read Write Flush Close GetFileSizeEx" do
-  before(:all) do
-    Dir.mkdir "c:\\tmp" rescue nil
+  before do
+    Dir.mkdir "c:\\tmp" unless File.directory?('c:\\tmp')
     Dir.chdir "c:\\tmp"
     @fn1 = "c:\\tmp\\f1.txt"
     @msg = Time.now.to_s + " asfas f;asjf;lasdfj;s af;alsj f"
   end
+  
+  after do
+    Win32ft.DeleteFile(@fn1)
+    Dir.chdir "c:\\"
+    Dir.rmdir "c:\\tmp"
+  end
     
-  it "CreateFile WriteFile CloseHandle GetFileSizeEx" do
+  it "CreateFile WriteFile CloseHandle GetFileSizeEx  ReadFile" do
+    fn = "c:\\tmp\\noexist.txt"
+    hf = Win32ft.CreateFile(fn, CFflag::GENERIC_READ,
+       CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
+       nil, CFflag::OPEN_EXISTING, 0, 0)
+    assert_equal(hf, CFflag::INVALID_HANDLE_VALUE)
+    
+    
     hf = Win32ft.CreateFile(@fn1, CFflag::GENERIC_WRITE,
        CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
        nil, CFflag::OPEN_ALWAYS, 0, 0)
-    hf.should satisfy { |obj| obj.is_a? Fixnum }
+    refute_equal(hf, CFflag::INVALID_HANDLE_VALUE)
        
     wded = FFI::MemoryPointer.new(:uint32, 1)
     buffer = FFI::MemoryPointer.new(:char, @msg.bytesize)
     buffer.write_string @msg
     wfres = Win32ft.WriteFile(hf, buffer, @msg.bytesize, wded, nil)
-    wfres.should be(true)
-    wded.read_uint32.should == @msg.bytesize
+    assert_equal(wfres, true)
+    assert_equal(wded.read_uint32, @msg.bytesize)
     
-    chres = Win32ft.CloseHandle(hf)
-    chres.should be(true)
-  end
-  
-  it "ReadFile" do
+    res = Win32ft.CloseHandle(hf)
+    assert(res)
+
+
     buffer = FFI::MemoryPointer.new :char, @msg.bytesize*2
     rded = FFI::MemoryPointer.new :uint32, 1
     hf = Win32ft.CreateFile(@fn1, CFflag::GENERIC_READ,
        CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
        nil, CFflag::OPEN_EXISTING, 0, 0)
-    hf.should satisfy { |obj| obj.is_a? Fixnum }
+    assert(hf != CFflag::INVALID_HANDLE_VALUE)
     rfres = Win32ft.ReadFile(hf, buffer, @msg.bytesize*2, rded, nil)
-    rfres.should be(true)
-    rded.read_uint32.should == @msg.bytesize
-    buffer.read_string.should == @msg
-    Win32ft.CloseHandle(hf)
-  end
-  
-  it "ReadFile no exist file" do
-    Dir.mkdir "c:\\tmp" rescue nil
-    fn = "c:\\tmp\\noexist.txt"
-    hf = Win32ft.CreateFile(fn, CFflag::GENERIC_READ,
-       CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
-       nil, CFflag::OPEN_EXISTING, 0, 0)
-    hf.should == CFflag::INVALID_HANDLE_VALUE
-  end
-  
-  it "getfilesize" do
+
+    assert(rfres)
+    assert_equal(rded.read_uint32, @msg.bytesize)
+    assert_equal(buffer.read_string, @msg)
+    res = Win32ft.CloseHandle(hf)
+    assert(res)
+
     size = Win32ft.getfilesize(@fn1)
-    size.should == @msg.bytesize
+    assert_equal(size, @msg.bytesize)
   end
 end
 
 describe "GetFileTime SetFileTime" do
-  before(:all) do
-    Dir.mkdir "c:\\tmp" rescue nil
+  before do
+    Dir.mkdir "c:\\tmp" unless File.directory?('c:\\tmp')
     Dir.chdir "c:\\tmp"
     @fn1 = "c:\\tmp\\f1.txt"
     @msg = Time.now.to_s * 2
+    File.write(@fn1, @msg)
+    sleep 0.1
   end
 
-  after(:all) do
-    Win32ft.DeleteFile(@fn1).should == true
+  after do
+    Win32ft.DeleteFile(@fn1)
     Dir.chdir "c:\\"
     Dir.rmdir "c:\\tmp"
   end
 
   it "getfiletime" do
     tc1, ta1, tm1 = Win32ft.getfiletime(@fn1)
-    tc1.should_not == FileTime.new
-    ta1.should_not == FileTime.new
-    tm1.should_not == FileTime.new
+    refute_equal(tc1, FileTime.new)
+    refute_equal(ta1, FileTime.new)
+    refute_equal(tm1, FileTime.new)
   end
   
   it "setfiletime getfiletime getfilesize" do
@@ -197,17 +155,17 @@ describe "GetFileTime SetFileTime" do
     fnt.close
 
     tc2, ta2, tm2 = Win32ft.getfiletime(fnt.path)
-    tc2.should_not == tc1
-    ta2.should_not == ta1
-    tm2.should_not == tm1
+    refute_equal(tc2, tc1)
+    refute_equal(ta2, ta1)
+    refute_equal(tm2, tm1)
     
     res = Win32ft.setfiletime(fnt.path, tc1, ta1, tm1)
-    res.should be(true)
+    assert(res)
     tc3, ta3, tm3, sz = Win32ft.getfiletime(fnt.path, getsize: true)
-    tc3.should == tc1
-    ta3.should == ta1
-    tm3.should == tm1
-    sz.to_i.should == @msg.bytesize
+    assert_equal(tc3, tc1)
+    assert_equal(ta3, ta1)
+    assert_equal(tm3, tm1)
+    assert_equal(sz.to_i, @msg.bytesize)
   end
   
   it "ft2double double2ft" do
@@ -218,9 +176,9 @@ describe "GetFileTime SetFileTime" do
     tc2 = Win32ft.double2ft(ftc1)
     ta2 = Win32ft.double2ft(fta1)
     tm2 = Win32ft.double2ft(ftm1)
-    (tc2[:dwLowDateTime] - tc1[:dwLowDateTime]).should <= 10
-    (ta2[:dwLowDateTime] - ta1[:dwLowDateTime]).should <= 10
-    (tm2[:dwLowDateTime] - tm1[:dwLowDateTime]).should <= 10
+    assert((tc2[:dwLowDateTime] - tc1[:dwLowDateTime]) <= 10)
+    assert((ta2[:dwLowDateTime] - ta1[:dwLowDateTime]) <= 10)
+    assert((tm2[:dwLowDateTime] - tm1[:dwLowDateTime]) <= 10)
   end
   
   it "copy file time" do
@@ -233,81 +191,79 @@ describe "GetFileTime SetFileTime" do
     f2.close
     tc1, ta1, tm1, sz1 = Win32ft.getfiletime f1.path, getsize: true
     tc2, ta2, tm2, sz2 = Win32ft.getfiletime f2.path, getsize: true
-    tc2.should_not == tc1
-    ta2.should_not == ta1
-    tm2.should_not == tm1
-    sz1.should_not == sz2
+    refute_equal(tc2, tc1)
+    refute_equal(ta2, ta1)
+    refute_equal(tm2, tm1)
+    refute_equal(sz1, sz2)
     
     tc1, ta1, tm1, sz1 = Win32ft.getfiletime f1.path, getsize: true
     Win32ft.copyfiletime(f1.path, f2.path)
     tc2, ta2, tm2, sz2 = Win32ft.getfiletime f2.path, getsize: true
-    tc2.should == tc1
-    ta2.should == ta1
-    tm2.should == tm1
+    assert_equal(tc2, tc1)
+    assert_equal(ta2, ta1)
+    assert_equal(tm2, tm1)
   end
+
   it "copy file time on some directory" do
-    Dir.mkdir 'a' rescue nil
     t=Time.now.to_f.to_s
-    f1 = open("a/a1#{t}", 'wb')
+    f1 = open("a_a1#{t}", 'wb')
     f1.print '111'
     f1.close
     sleep 0.1
-    f2 = open("a/a2#{t}", 'wb')
+    f2 = open("a_a2#{t}", 'wb')
     f2.print '222222'
     f2.close
     tc1, ta1, tm1, sz1 = Win32ft.getfiletime f1.path, getsize: true
     tc2, ta2, tm2, sz2 = Win32ft.getfiletime f2.path, getsize: true
-    tc2.should_not == tc1
-    ta2.should_not == ta1
-    tm2.should_not == tm1
-    sz1.should_not == sz2
+    refute_equal(tc2, tc1)
+    refute_equal(ta2, ta1)
+    refute_equal(tm2, tm1)
+    refute_equal(sz1, sz2)
     
     tc1, ta1, tm1, sz1 = Win32ft.getfiletime f1.path, getsize: true
     Win32ft.copyfiletime(f1.path, f2.path)
     tc2, ta2, tm2, sz2 = Win32ft.getfiletime f2.path, getsize: true
-    tc2.should == tc1
-    ta2.should == ta1
-    tm2.should == tm1
-    Win32ft.DeleteFile(f1.path).should == true
-    Win32ft.DeleteFile(f2.path).should == true
-    Dir.rmdir 'a' rescue nil
+    assert_equal(tc2, tc1)
+    assert_equal(ta2, ta1)
+    assert_equal(tm2, tm1)
+    assert_equal(Win32ft.DeleteFile(f1.path), true)
+    assert_equal(Win32ft.DeleteFile(f2.path), true)
   end
+
   it "copy file time on diff directory" do
-    Dir.mkdir 'a' rescue nil
-    Dir.mkdir 'b' rescue nil
     t=Time.now.to_f.to_s
-    f1 = open("a/a#{t}", 'wb')
+    f1 = open("a_a#{t}", 'wb')
     f1.print '111'
     f1.close
     sleep 0.1
-    f2 = open("b/a#{t}", 'wb')
+    f2 = open("b_a#{t}", 'wb')
     f2.print '222222'
     f2.close
     tc1, ta1, tm1, sz1 = Win32ft.getfiletime f1.path, getsize: true
     tc2, ta2, tm2, sz2 = Win32ft.getfiletime f2.path, getsize: true
-    tc2.should_not == tc1
-    ta2.should_not == ta1
-    tm2.should_not == tm1
-    sz1.should_not == sz2
+    refute_equal(tc2, tc1)
+    refute_equal(ta2, ta1)
+    refute_equal(tm2, tm1)
+    refute_equal(sz1, sz2)
     
     tc1, ta1, tm1, sz1 = Win32ft.getfiletime f1.path, getsize: true
     Win32ft.copyfiletime(f1.path, f2.path)
     tc2, ta2, tm2, sz2 = Win32ft.getfiletime f2.path, getsize: true
-    tc2.should == tc1
-    ta2.should == ta1
-    tm2.should == tm1
-    Win32ft.DeleteFile(f1.path).should == true
-    Win32ft.DeleteFile(f2.path).should == true
-    Dir.rmdir 'a' rescue nil
-    Dir.rmdir 'b' rescue nil
+    assert_equal(tc2, tc1)
+    assert_equal(ta2, ta1)
+    assert_equal(tm2, tm1)
+    assert_equal(Win32ft.DeleteFile(f1.path), true)
+    assert_equal(Win32ft.DeleteFile(f2.path), true)
   end
+
   it "SetFileAttributes" do
     fn = "1.txt"
     File.write(fn, "asdfadsf")
     tc, ta, tm = Win32ft.getfiletime(fn)
-    FileTime.should === tc
+    assert_instance_of(FileTime, tc)
     FileUtils.chmod(0000, fn)
-    Win32ft.setfiletime(fn, tc, ta, tm).should == true
+    assert_equal(Win32ft.setfiletime(fn, tc, ta, tm), true)
     FileUtils.rm(fn)
   end
 end
+

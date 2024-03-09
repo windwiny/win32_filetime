@@ -1,0 +1,30 @@
+#!/usr/bin/env ruby
+
+require 'win32_filetime'
+W = Win32ft
+
+if ARGV.include?('-h') ||  ARGV.include?('--help') || ARGV.size < 2
+ p %{Syntax:  setft file_getMtime  set1 set2 ...}
+ exit(0)
+end
+
+fn=ARGV[0]
+c,a,m=W.getfiletime(fn)
+
+p [fn, W.ft2st(m) ]
+
+
+rrs=ARGV[1..-1]
+
+if rrs.size==0
+rrs<<'*'
+end
+
+rrs.each do |rr|
+	fs= Dir.glob rr
+
+	fs.each do |fn|
+	 p fn
+	 W.setfiletime(fn, m,m,m)
+	end
+end

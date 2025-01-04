@@ -1,91 +1,265 @@
 #!/usr/bin/env ruby -w
-# encoding: GBK
+# encoding: UTF-8
 
-require 'win32_filetime'
-require "dirwalk"
+require 'getoptlong'
+require_relative '../lib/cfg'
+require_relative '../lib/dirwalk'
+require_relative '../lib/win32_filetime'
 
-G = {
-  :autorun => false,
-  :stdout => STDOUT,
-  :prprog => true,
-  :BS => '',
-  :WS => '',
-  :autofn => false,
-  :show_datetimestr => false,
-  }
+def show_usage(st = 0)
+  warn <<~HELP
 
-trap "SIGINT" do
-  STDERR.puts "\n\nexit on Ctrl-C.  ids: #{$ids}  ifs: #{$ifs}"
-  exit(1)
+         Usage:
+           list dirs each file/dir 's  [name create_time access_time modify_time size]
+
+         Syntax:
+
+           getdirtimes.rb  [ -s ]          Dir1 Dir2 ... > file.log    # one file
+           getdirtimes.rb  [ -s ]  -d out  Dir1 Dir2 ...               # each dir create one logfile in out dir
+
+         Params:
+           --format, -s        [boolean]   true ? "YYYY-mm-dd HH:MM:SS.UUU" : 0x1234567812345678 , default is 'false'
+           --out-dir, -d       dir         auto save to  <dir>/<basename>.log
+           --exclude-dir, -X  dir         exclude dir
+           --exclude, -x      file        exclude file
+       HELP
+  exit st
 end
 
-if !STDOUT.tty? && STDERR.tty?
-  G[:prprog] = true
-  G[:BS] = "\b" * 78
-  G[:WS] = " " * 78
-  def tee(txt, both: true)
-    puts txt
-    STDERR.print txt if both
-  end
-else
-  G[:prprog] = false
-  def tee(txt, both: true)
-    puts txt
-  end
-end
+class ConfigStatus < BASIC_ConfigStatus
+  def initialize
+    @cfg_can_config = true
+    @cfg_show_progress = true
+    @cfg_sleep_sec = 1
+    @cfg_autorun = false
+    @cfg_stdout = STDOUT
+    @cfg_BS = ''
+    @cfg_WS = ''
+    @cfg_autofn = nil
+    @cfg_format_datetimestr = false
 
-def prdi(di)
-  $ids, $ifs = 0, 0
-  t00 = t0 = Time.now
-  Dir.walk('.') do |p, ds, fs|
-    p.gsub!('/', "\\")
-    $ids += 1
-    tc, ta, tm = Win32ft.getfiletime(p)
-    if G[:show_datetimestr]
-      puts "#{p}\\ #{tc.to_s2} #{ta.to_s2} #{tm.to_s2} 0"
+    reinit
+  end
+
+  def reinit
+    @st_num_dir = 0
+    @st_num_file = 0
+    @st_num_exception = 0
+    @st_last_file = ''
+    @st_t00 = Time.now
+  end
+
+  attr_accessor(*%w{
+    cfg_can_config
+    cfg_show_progress
+    cfg_sleep_sec
+    cfg_autorun
+    cfg_stdout
+    cfg_BS
+    cfg_WS
+    cfg_autofn
+    cfg_format_datetimestr
+    st_num_dir
+    st_num_file
+    st_num_exception
+    st_last_file
+    st_t00
+  })
+
+  def print_status(pre = '', summary: false, force: false)
+    msg = (%{#{pre}  time: #{Time.now - @st_t00}  dir+file= #{@st_num_dir} + #{@st_num_file} = #{@st_num_dir + @st_num_file}  ERROR: #{@st_num_exception}})
+    if summary
+      msg = "\n" + msg
     else
-      puts "#{p}\\ #{tc.to_s} #{ta.to_s} #{tm.to_s} 0"
+      msg += %{  last:#{@st_last_file}}
     end
+    warn(msg) if (force || (@st_num_dir > 0 || @st_num_file > 0))
+    msg
+  end
+end
+
+G = ConfigStatus.new
+# CFG = BASIC_Cfg.new # in cfg.rb
+
+# @param err [Exception]
+# @param ERROR [Boolean]
+# @return [Boolean] how to do on block
+def onerr(err, canRetry = false)
+  warn %( --- ERROR "#{err.message}"  <#{err.backtrace[0..1].join(';')}>)
+  CFG.st_num_exception += 1
+  return canRetry
+end
+
+# @param rdir [String]  dir full name
+def prdi(rdir)
+  # already chdir to realpath
+  return if CFG.checkSkipDir(rdir)
+
+  # dir basename, curr_dir isused to replace '.'. FIXME: when use mounted VHD and use .. get /
+  curr_dir = File.basename(File.absolute_path(rdir))
+
+  Dir.walk('.', true, method(:onerr)) do |_p1, ds, fs|
+    next if CFG.checkSkipDir(_p1)
+
+    p1 = _p1.gsub('/', '\\')
+    puts %{# #{Time.now}  Process  ds: #{ds.size} fs: #{fs.size} dir: "#{p1}"}
+
     fs.each do |fn|
-      fn = File.join(p, fn)
-      fn.gsub!('/', "\\")
-      $ifs += 1
-      tc, ta, tm, sz= Win32ft.getfiletime(fn, getsize: true)
-      if G[:show_datetimestr]
-        puts "#{fn} #{tc.to_s2} #{ta.to_s2} #{tm.to_s2} #{sz}"
+      next if CFG.checkSkipFile(fn)
+      fn = File.join(p1, fn)
+      fn.gsub!('/', '\\')
+      G.st_num_file += 1
+      tc, ta, tm, sz = Win32ft.getfiletime(fn, getsize: true)
+      fn_pre = fn
+      fn_pre[0] = curr_dir  # '.' replace cur_dir
+      G.st_last_file = fn_pre
+      if G.cfg_format_datetimestr
+        puts "#{fn_pre} #{tc.to_s2} #{ta.to_s2} #{tm.to_s2} #{sz}"
       else
-        puts "#{fn} #{tc.to_s} #{ta.to_s} #{tm.to_s} #{sz}"
+        puts "#{fn_pre} #{tc} #{ta} #{tm} #{sz}"
       end
+    rescue Exception => e
+      # in each do block, rescue exception and like next can continue other
+      msg = %{error on #{e.message}, proc dir: "#{p1}   fn: #{fn} "  }
+      puts msg
+      warn msg
+      CFG.st_num_exception += 1
     end
-    if G[:prprog]
-      ts = Time.now
-      if ts - t0 > 0.3
-        STDERR.print "#{G[:BS]} Dir: #{di}  ds: #{$ids}  fs: #{$ifs}  time: #{ts - t00}"
-        t0 = ts
-      end
+
+    G.st_num_dir += 1
+    tc, ta, tm = Win32ft.getfiletime(p1)
+    fn_pre = p1
+    fn_pre[0] = curr_dir  # '.' replace cur_dir
+    G.st_last_file = fn_pre
+    if G.cfg_format_datetimestr
+      puts "#{fn_pre}\\ #{tc.to_s2} #{ta.to_s2} #{tm.to_s2} 0"
+    else
+      puts "#{fn_pre}\\ #{tc} #{ta} #{tm} 0"
     end
   end
-  if G[:prprog]
-    ts = Time.now
-    STDERR.puts "#{G[:BS]} Dir: #{di}  ds: #{$ids}  fs: #{$ifs}  time: #{ts - t00}"
+rescue Exception => e
+  puts %{error on Dir.walk "#{rdir}"    #{e.message}}
+  warn %{error on Dir.walk "#{rdir}"}, e, '----------\n\n'
+  CFG.st_num_exception += 1
+end
+
+def create_helper_threads
+  if G.cfg_show_progress
+    create_show_progress_thread do
+      G.print_status(G.cfg_BS)
+      sleep(G.cfg_sleep_sec)
+    end
+  end
+  if G.cfg_can_config
+    create_cfg_thread(G) do |instance_var, value|
+      # check vars
+    end
   end
 end
 
 def main
-  if (ARGV & %w{-h --help}).size > 0
-    STDERR.puts "Syntax: getdirtimes.rb  Dir1 > file.log  [ -s ]\n\n  -s   output \"YYYY-mm-dd HH:MM:SS.UUU\" instead of 0x1234567812345678"
-    exit 1
+  trap 'SIGINT' do
+    G.print_status("\nCTRL-C", force: true)
+    warn("\n\nexit on Ctrl-C.  \n\nPress Ctrl-C  again, on windows run as .bat\n\n")
+    Process.kill(9, $$)
   end
 
-  G[:autofn] = ARGV.delete('-o') ? true : false
-  G[:show_datetimestr] = ARGV.delete('-s') ? true : false
+  options = GetoptLong.new(
+    ['--format', '-s', GetoptLong::OPTIONAL_ARGUMENT],
+    ['--out-dir', '-d', GetoptLong::REQUIRED_ARGUMENT],
+    ['--exclude-dir', '-X', GetoptLong::REQUIRED_ARGUMENT],
+    ['--exclude', '-x', GetoptLong::REQUIRED_ARGUMENT],
+    ['--help', '-h', '-?', GetoptLong::NO_ARGUMENT]
+  )
 
-  ARGV.each do |fn|
-    fn = File.absolute_path(fn)
-    if File.directory? fn
-      Dir.chdir(fn) {prdi(fn)}
+  options.each do |name, value|
+    case name
+    when '--help'
+      show_usage
+    when '--format'
+      G.cfg_format_datetimestr = if value.empty?
+          true
+        elsif value =~ /true/i
+          true
+        elsif value =~ /false/i
+          false
+        else
+          warn %{\n ERROR!   --format value bad true|false }
+          exit 1
+        end
+    when '--out-dir'
+      if File.directory?(value)
+        G.cfg_autofn = value
+      else
+        warn %{\n ERROR!   --out-dir  "#{value}" not directory }
+        exit 2
+      end
+    when '--exclude-dir'
+      CFG.addSkipDirs(value) unless value.empty?
+    when '--exclude'
+      CFG.addSkipFiles(value) unless value.empty?
     end
   end
+
+  dirs = []
+  ARGV.each do |fn|
+    if fn.include?('?') || fn.include?('*')
+      dirs += Dir.glob(fn).filter { |fn| File.directory?(fn) }
+    else
+      if File.directory?(fn)
+        dirs << fn
+      else
+        warn %{\n WARN!   "#{fn}" not directory }
+      end
+    end
+  end
+
+  dirs = dirs.uniq
+
+  if dirs.empty?
+    show_usage 3
+  end
+
+  if G.cfg_autofn || !STDOUT.tty? && STDERR.tty?
+    G.cfg_show_progress = true
+    G.cfg_BS = "\b" * 78
+    G.cfg_WS = ' ' * 78
+
+    def tee(txt, both: true)
+      puts txt
+      warn txt if both
+    end
+  else
+    G.cfg_show_progress = false
+
+    def tee(txt, both: true)
+      puts txt
+    end
+  end
+
+  create_helper_threads
+  dirs.each do |fn|
+    if G.cfg_autofn
+      logfn = File.join(G.cfg_autofn, File.basename(File.absolute_path(fn)) + Time.now.strftime('_%Y%m%d%H%M%S')) + '.log'
+      warn %{=>  List "#{fn}" , logfn: #{logfn}}
+      File.open(logfn, 'w') do |fw|
+        $stdout, $stdout_ori = fw, $stdout
+        G.reinit
+        Dir.chdir(fn) do
+          prdi(fn)
+        end
+        puts G.print_status('# SUMMARY => ', summary: true)
+        warn %{<==  "#{fn}" , logfn: #{logfn} ,  size: #{fw.pos}}
+        $stdout = $stdout_ori
+      end
+    else
+      Dir.chdir(fn) do
+        prdi(fn)
+      end
+    end
+  end
+
+  puts G.print_status('# SUMMARY => ', summary: true)
 end
 
 main

@@ -1,0 +1,316 @@
+#!/usr/bin/env ruby -w
+# encoding: UTF-8
+
+require 'getoptlong'
+require_relative '../lib/cfg'
+require_relative '../lib/win32_filetime'
+
+W = Win32ft
+
+def show_usage(st = 0)
+  warn <<~HELP
+
+         Usage:
+          Read log files, Restore directory and file times
+
+         Syntax:
+          restoredirtimes.rb  [ -e encoding ]  [ -o ]  -p PAIR -p PAIR  f1.log f2.log ... 
+
+         Params:
+          --lang, -e      encode   log file encoding, like UTF-8 | UTF-16LE | ... ,  default 'UTF-8'
+          --only-dir, -o  [bool]   only update directory, default 'false'
+          -p              PAIR     EXAMPLE:  str split by '|' ==>  <workdir>    <replace log line first subdir>
+                                      "d:\\dir1\\subdir1|subdir2\\\\"      cmd params end double \\
+                                      "d:\\dir1\\subdir1|subdir2"      
+                                      "d:\\dir1\\subdir|"                  not change
+                                      "d:\\dir1\\subdirx|?"                replace dir basename
+                                      "d:\\dir1\\subdirx|*"                full path replace
+                                   chdir to workdir, read line replace first subdir to find file
+
+       HELP
+
+  exit st
+end
+
+class ConfigStatus < BASIC_ConfigStatus
+  def initialize
+    @cfg_can_config = true
+    @cfg_show_progress = true
+    @cfg_sleep_sec = 1
+    @cfg_encoding = 'UTF-8'
+    @cfg_only_dir = false
+
+    reinit
+  end
+
+  def reinit
+    @st_t00 = Time.now
+    @st_rows = 0
+    @st_rows_rec = 0
+    @st_num_dir = 0
+    @st_num_file = 0
+    @st_num_not_found = 0
+    @st_num_changed = 0
+    @st_num_succ = 0
+    @st_num_exception = 0
+    @st_last_file = ''
+  end
+
+  attr_accessor(*%w{
+    cfg_can_config
+    cfg_show_progress
+    cfg_sleep_sec
+    cfg_encoding
+    cfg_only_dir
+    st_t00
+    st_rows
+    st_rows_rec
+    st_num_dir
+    st_num_file
+    st_num_not_found
+    st_num_changed
+    st_num_succ
+    st_num_exception
+    st_last_file
+  })
+
+  def print_status(pre = '', force: false, summary: false)
+    msg = [
+      pre,
+      "time: #{Time.now - @st_t00} ",
+      "all:#{@st_rows}  rec: #{@st_rows_rec}",
+      "notfound: #{@st_num_not_found}   match: #{@st_num_dir + @st_num_file} (#{@st_num_dir}+#{@st_num_file})",
+      "want: #{@st_num_changed}   succ: #{@st_num_succ}",
+    ].join('  ')
+
+    if summary
+      msg = "\n" + msg
+    else
+      msg += %{  last:#{@st_last_file}}
+    end
+    warn msg
+    msg
+  end
+end
+
+G = ConfigStatus.new
+# CFG = BASIC_Cfg.new # in cfg.rb
+
+# @param pair_kvs [ {subdir => workdir } ] subdir => workdir pairs, subdir canbe [dir, "dir1\\dir2" , '', '?', '*']
+# @param logf [String]
+def rolloldtime(pair_kvs, logf)
+  logf = File.absolute_path(logf).gsub('/', '\\')
+  warn %(=> #{pair_kvs.size} #{pair_kvs}      fn:"#{logf}")
+
+  pair_kvs.each_with_index do |pair, inx|
+    subdir, workdir = pair
+    if subdir == ''
+      # do nothing
+    elsif subdir == '?'
+      subdir = File.basename(File.absolute_path(workdir)) + '\\'  # 'd:/' => '/'
+    elsif subdir == '*'
+      subdir = workdir + (workdir.end_with?('\\') ? '' : '\\')
+    elsif !subdir.end_with?('\\')
+      subdir += '\\'
+    else
+      # impossible
+    end
+
+    warn %(====> #{inx + 1}/#{pair_kvs.size}   chdir: "#{workdir}"   sub: "#{subdir}" <-- fn:"#{logf}")
+    Dir.chdir(workdir) do
+      File.foreach(logf, encoding: G.cfg_encoding) do |line|
+        # @type [String]
+        line = line.chomp     # not chomp!, not strip
+        next if line.empty?
+
+        G.st_rows += 1  # Duplicate sum if has multi pairs proc in each logfile
+
+        next if (subdir != '' && !line.start_with?(subdir))
+        next if line.index('\\.\\') # skip dup fns
+
+        inx1 = line.index(/( 0x\w{16}){3} \d+$/)
+        if inx1
+          format = 'hex'
+        else
+          inx1 = line.index(/( \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+){3} \d+$/)
+          if inx1
+            format = 'str'
+          end
+        end
+        next unless inx1
+        G.st_rows_rec += 1
+
+        fn = line[0...inx1]
+
+        fn = fn.sub(subdir, '') if subdir != ''
+        fn = '.\\' if fn == ''
+
+        next if G.cfg_only_dir && !File.directory?(fn)
+
+        if File.file?(fn)
+          G.st_num_file += 1
+        elsif File.directory?(fn)
+          G.st_num_dir += 1
+        else
+          G.st_num_not_found += 1
+          next
+        end
+
+        ss = line[inx1..-1]
+
+        if format == 'hex' # ss =~ (0x\w{16}) (0x\w{16}) (0x\w{16}) (\d+)$/
+          tc1, ta1, tm1, sz1 = ss.split
+          tc1 = tc1[2..]
+          ta1 = ta1[2..]
+          tm1 = tm1[2..]
+        elsif format == 'str' #  tstr = '\d{4}\-\d{2}\-\d{2} \d{2}:\d{2}:\d{2}\.\d+'; ss =~ / (#{tstr}) (#{tstr}) (#{tstr}) (\d+)$/
+          xx = ss.split
+          tc1 = xx[0] + ' ' + xx[1]
+          ta1 = xx[2] + ' ' + xx[3]
+          tm1 = xx[4] + ' ' + xx[5]
+          sz1 = xx[6]
+        else
+          warn %{CHECK THIS!!}
+          # exit 100 #
+        end
+
+        if fn[-1] != '\\' && fn[-1] != '/' # not check dir, in log file dir size always 0
+          cst = begin
+              File.stat(fn)
+            rescue StandardError
+              CFG.st_num_exception += 1
+              nil
+            end
+        end
+        if cst.nil? || cst && cst.size.to_s == sz1
+          begin
+            res = W.setfiletime(fn, tc1, ta1, tm1)
+            G.st_num_succ += 1 if res
+          rescue StandardError
+            CFG.st_num_exception += 1
+            warn "   -- ERROR! setfiletime #{fn}"
+          end
+          G.st_num_changed += 1 # TODO bug ? exists fn?
+          G.st_last_file = fn
+        else
+          warn %(   -- skip diff size! "#{fn}"  '#{sz1}'<>'#{cst&.size}')
+        end
+      end
+    end
+  end
+
+  G.print_status(' Restoreoldtimes ')
+  G.st_num_file
+end
+
+def create_helper_threads
+  if G.cfg_show_progress
+    create_show_progress_thread do
+      G.print_status
+      sleep(G.cfg_sleep_sec)
+    end
+  end
+  if G.cfg_can_config
+    create_cfg_thread(G) do |instance_var, value|
+      # check vars
+    end
+  end
+end
+
+def main
+  trap 'SIGINT' do
+    G.print_status("\nCTRL-C", force: true)
+    warn("\n\nexit on Ctrl-C.\n\nPress Ctrl-C  again, on windows run as .bat\n\n")
+    exit 1
+  end
+
+  options = GetoptLong.new(
+    ['--lang', '-e', GetoptLong::REQUIRED_ARGUMENT],
+    ['--only-dir', '-o', GetoptLong::OPTIONAL_ARGUMENT],
+    ['--pair', '-p', GetoptLong::REQUIRED_ARGUMENT],
+    ['--help', '-h', GetoptLong::NO_ARGUMENT]
+  )
+
+  pairs = []
+  options.each do |name, value|
+    show_usage if name == '--help'
+    case name
+    when '--lang'
+      encs = Encoding.list.map { |x| x.name.upcase }
+      if encs.include?(value)
+        G.cfg_encoding = value
+      else
+        warn %{\n ERROR!   bad encoding name "#{value}"}
+        exit 2
+      end
+    when '--only-dir'
+      G.cfg_only_dir = if value.empty?
+          true
+        elsif value =~ /true/i
+          true
+        elsif value =~ /false/i
+          false
+        else
+          warn %{\n ERROR!   --only-dir value bad true|false }
+          exit 3
+        end
+    when '--pair'
+      pairs << value
+    end
+  end
+
+  logfns = ARGV.map do |fn|
+    if File.file?(fn)
+      fn
+    else
+      warn %{\n ERROR!   not file  "#{fn}"}
+      nil
+    end
+  end.compact
+
+  if logfns.empty?
+    warn %{\n ERROR!   not has log files}
+    show_usage 5
+  end
+
+  pair_kvs = {}
+
+  pairs.map do |value|
+    xx = value.split('|')
+    if xx.size != 2
+      warn %{\n ERROR!   bad format "#{value}",  not 1 "|"}
+      show_usage 40
+    end
+    workdir, subdir = xx
+
+    if subdir == '' && pairs.size > 1
+      warn %{\n ERROR!   has empty sub dir name "", and has multi pairs.}
+      exit 41
+    end
+    if !File.directory?(workdir)
+      warn %{\n ERROR!   not dir "#{workdir}"}
+      exit 42
+    end
+    if (pair_kvs.has_key?(subdir))
+      warn %{\n ERROR!   has mulit subdir "#{subdir}"}
+      exit 43
+    end
+    pair_kvs[subdir] = workdir
+  end
+
+  if pairs.empty?
+    show_usage 6
+  end
+
+  p [G.cfg_encoding, G.cfg_only_dir, pair_kvs, logfns]
+
+  create_helper_threads
+
+  logfns.each do |logfn|
+    rolloldtime(pair_kvs, logfn)
+  end
+
+  G.print_status('# SUMMARY => ', summary: true)
+end
+
+main

@@ -2,6 +2,10 @@
 
 using FFI export win32 filetime api
 
+## Ver
+
+0.0.9 2025 fixup permiss problem
+
 ## Installation
 
 Add this line to your application's Gemfile:

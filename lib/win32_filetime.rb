@@ -1,16 +1,16 @@
 #!/usr/bin/env ruby -w
-# encoding: GBK
+# encoding: UTF-8
 
 require "win32_filetime/version"
 require "ffi"
 
 class Win32Filetime::FileTime < FFI::Struct
   layout :dwLowDateTime, :uint,
-          :dwHighDateTime, :uint
+         :dwHighDateTime, :uint
 
   include Comparable
-  
-  def initialize ival=nil
+
+  def initialize(ival = nil)
     super()
     if ival
       ival = ival.to_i if String === ival
@@ -18,7 +18,7 @@ class Win32Filetime::FileTime < FFI::Struct
       self[:dwHighDateTime] = (ival >> 32) & 0xFFFFFFFF
     end
   end
-  
+
   def <=>(other)
     s1 = self[:dwHighDateTime] << 32 | self[:dwLowDateTime]
     o1 = other[:dwHighDateTime] << 32 | other[:dwLowDateTime]
@@ -57,7 +57,7 @@ class Win32Filetime::FileTime < FFI::Struct
     Win32Filetime.ft2st(Win32Filetime.ft2lft(self)).to_s
   end
 
-  def minus year:nil,month:nil,day:nil,hour:nil,minute:nil,second:nil,millisecond:nil
+  def minus(year: nil, month: nil, day: nil, hour: nil, minute: nil, second: nil, millisecond: nil)
     st = Win32Filetime.ft2st(self)
     st[:wYear] -= year if year
     st[:wMonth] -= month if month
@@ -74,24 +74,23 @@ class Win32Filetime::FileTime < FFI::Struct
   end
 
   def to_i
-    ((self[:dwHighDateTime] << 32 | self[:dwLowDateTime]) - 116444736000000000) / 10**7.0
+    ((self[:dwHighDateTime] << 32 | self[:dwLowDateTime]) - 116444736000000000) / 10 ** 7.0
   end
 
   def to_st
     Win32Filetime.ft2st(self)
   end
-
 end
 
 class Win32Filetime::SystemTime < FFI::Struct
   layout :wYear, :ushort,
-          :wMonth, :ushort,
-          :wDayOfWeek, :ushort,
-          :wDay, :ushort,
-          :wHour, :ushort,
-          :wMinute, :ushort,
-          :wSecond, :ushort,
-          :wMilliseconds, :ushort
+         :wMonth, :ushort,
+         :wDayOfWeek, :ushort,
+         :wDay, :ushort,
+         :wHour, :ushort,
+         :wMinute, :ushort,
+         :wSecond, :ushort,
+         :wMilliseconds, :ushort
 
   def ==(other)
     if other.is_a? self.class
@@ -119,7 +118,7 @@ class Win32Filetime::SystemTime < FFI::Struct
 
   def to_s
     "%04d-%02d-%02d %02d:%02d:%02d.%d" % [
-      self[:wYear],self[:wMonth],self[:wDay],self[:wHour],self[:wMinute],self[:wSecond],self[:wMilliseconds]
+      self[:wYear], self[:wMonth], self[:wDay], self[:wHour], self[:wMinute], self[:wSecond], self[:wMilliseconds],
     ]
   end
 
@@ -130,12 +129,11 @@ class Win32Filetime::SystemTime < FFI::Struct
   def to_ft
     Win32Filetime.st2ft(self)
   end
-
 end
 
 class Win32Filetime::Large_Integer < FFI::Struct
   layout :LowPart, :uint,
-          :HighPart, :uint
+         :HighPart, :uint
 
   def ==(other)
     if other.is_a? self.class
@@ -166,7 +164,6 @@ class Win32Filetime::Large_Integer < FFI::Struct
   def inspect
     to_i.to_s
   end
-
 end
 
 class Win32Filetime::HANDLE < FFI::Struct
@@ -231,7 +228,8 @@ module Win32Filetime
 
   attach_function :GetFileType, [:ulong], :int
   attach_function :GetLastError, [], :uint
-  attach_function :FormatMessage, :FormatMessageA, [:uint, :pointer, :uint, :uint, :string, :uint, :pointer], :int
+  attach_function :FormatMessageA, :FormatMessageA, [:uint, :pointer, :uint, :uint, :string, :uint, :pointer], :int
+  attach_function :FormatMessageW, :FormatMessageW, [:uint, :pointer, :uint, :uint, :string, :uint, :pointer], :int
 
   attach_function :FileTimeToLocalFileTime, [FileTime.by_ref, FileTime.by_ref], :bool
   attach_function :LocalFileTimeToFileTime, [FileTime.by_ref, FileTime.by_ref], :bool
@@ -274,9 +272,9 @@ module Win32Filetime
       ft = FileTime.new
       ft[:dwHighDateTime] = h1
       ft[:dwLowDateTime] = l1
-    elsif str=~/(\d{4})\-(\d{2})\-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d+)/
+    elsif str =~ /(\d{4})\-(\d{2})\-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d+)/
       st = SystemTime.new
-      wYear,wMonth,wDay,wHour,wMinute,wSecond,wMilliseconds = $1,$2,$3,$4,$5,$6,$7
+      wYear, wMonth, wDay, wHour, wMinute, wSecond, wMilliseconds = $1, $2, $3, $4, $5, $6, $7
       st[:wYear] = wYear.to_i
       st[:wMonth] = wMonth.to_i
       st[:wDay] = wDay.to_i
@@ -314,8 +312,11 @@ module Win32Filetime
     GetLocalTime(lt)
     lt
   end
-  attach_function :GetFileAttributes, :GetFileAttributesA, [:string], :uint
-  attach_function :SetFileAttributes, :SetFileAttributesA, [:string, :uint], :bool
+
+  attach_function :GetFileAttributesA, :GetFileAttributesA, [:string], :uint
+  attach_function :GetFileAttributesW, :GetFileAttributesW, [:string], :uint
+  attach_function :SetFileAttributesA, :SetFileAttributesA, [:string, :uint], :bool
+  attach_function :SetFileAttributesW, :SetFileAttributesW, [:string, :uint], :bool
 
 =begin
 CreateFile("", GENERIC_READ,  FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0)
@@ -352,10 +353,15 @@ FlushFileBuffers(HANDLE)
 CloseHandle(HANDLE)
 =end
 
-  attach_function :CreateFile, :CreateFileA, [:string, :uint, :uint, :pointer, :uint, :uint, :int], :ulong
+  @@enc_os = Encoding.find('locale')  # TODO, when use CreateFileA then convert to this.
+  @@enc_utf16 = Encoding.find("\x00\x01".unpack('S')[0] == 256 ? 'utf-16le' : 'utf-16be') # CreateFileW
+
+  attach_function :CreateFileA, :CreateFileA, [:string, :uint, :uint, :pointer, :uint, :uint, :int], :ulong
+  attach_function :CreateFileW, :CreateFileW, [:string, :uint, :uint, :pointer, :uint, :uint, :int], :ulong
   attach_function :ReadFile, [:ulong, :pointer, :uint, :pointer, :pointer], :bool
   attach_function :WriteFile, [:ulong, :pointer, :uint, :pointer, :pointer], :bool
-  attach_function :DeleteFile, :DeleteFileA, [:string], :bool
+  attach_function :DeleteFileA, :DeleteFileA, [:string], :bool
+  attach_function :DeleteFileW, :DeleteFileW, [:string], :bool
   attach_function :FlushFileBuffers, [:ulong], :bool
   attach_function :CloseHandle, [:ulong], :bool
 
@@ -366,8 +372,11 @@ CloseHandle(HANDLE)
     size = Large_Integer.new if getsize
     tc, ta, tm = FileTime.new, FileTime.new, FileTime.new
     ttts = [tc, ta, tm]
-    hf = CreateFile(fn, CFflag::GENERIC_READ, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
-        nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
+    if fn.encoding != @@enc_utf16
+      fn = begin fn.encode @@enc_utf16 rescue return ttts end
+    end
+    hf = CreateFileW(fn, CFflag::GENERIC_READ, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
+                     nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
     raise "getfiletime: Can not open file \"#{fn}\"" if hf == CFflag::INVALID_HANDLE_VALUE
     res = GetFileTime(hf, tc, ta, tm)
     raise "getfiletime: GetFileTime error." if !res
@@ -383,10 +392,13 @@ CloseHandle(HANDLE)
   # filename
   # tc,ta,tm  FileTime/ 16x String / Integer
   def self.setfiletime(fn, tc, ta, tm)
-    fattr = GetFileAttributes(fn)
-    SetFileAttributes(fn, fattr & ~FA::FILE_ATTRIBUTE_READONLY) if fattr & FA::FILE_ATTRIBUTE_READONLY
-    hf = CreateFile(fn, CFflag::GENERIC_WRITE, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
-        nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
+    if fn.encoding != @@enc_utf16
+      fn = begin fn.encode @@enc_utf16 rescue return false end
+    end
+    fattr = GetFileAttributesW(fn)
+    SetFileAttributesW(fn, fattr & ~FA::FILE_ATTRIBUTE_READONLY) if fattr & FA::FILE_ATTRIBUTE_READONLY
+    hf = CreateFileW(fn, CFflag::GENERIC_WRITE, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
+                     nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
     raise "setfiletime: Can not open file \"#{fn}\"" if hf == CFflag::INVALID_HANDLE_VALUE
     tc = str2ft(tc) if String === tc
     ta = str2ft(ta) if String === ta
@@ -397,17 +409,25 @@ CloseHandle(HANDLE)
     res = SetFileTime(hf, tc, ta, tm)
     raise "setfiletime: SetFileTime error." if !res
     CloseHandle(hf)
-    SetFileAttributes(fn, fattr) if fattr & FA::FILE_ATTRIBUTE_READONLY
+    SetFileAttributesW(fn, fattr) if fattr & FA::FILE_ATTRIBUTE_READONLY
     true
   end
 
   def self.copyfiletime(fn1, fn2)
+    begin
+      if fn1.encoding != @@enc_utf16
+        fn1 = fn1.encode @@enc_utf16
+        fn2 = fn2.encode @@enc_utf16
+      end
+    rescue
+      return false
+    end
     tc1, ta1, tm1 = getfiletime(fn1)
     setfiletime(fn2, tc1, ta1, tm1)
   end
 
   def self.double2ft(tt)
-    wintt = (tt * 10**7 + 116444736000000000).to_i
+    wintt = (tt * 10 ** 7 + 116444736000000000).to_i
     ft = FileTime.new
     ft[:dwHighDateTime] = wintt >> 32 & 0xFFFFFFFF
     ft[:dwLowDateTime] = wintt & 0xFFFFFFFF
@@ -416,15 +436,18 @@ CloseHandle(HANDLE)
 
   def self.ft2double(ft)
     wintt = ft[:dwHighDateTime] << 32 | ft[:dwLowDateTime]
-    tt = (wintt - 116444736000000000) / 10**7.0
+    tt = (wintt - 116444736000000000) / 10 ** 7.0
     tt
   end
 
   attach_function :GetFileSizeEx, [:ulong, Large_Integer.by_ref], :bool
 
   def self.getfilesize(fn)
-    hf = CreateFile(fn, CFflag::GENERIC_READ, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
-        nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
+    if fn.encoding != @@enc_utf16
+      fn = begin fn.encode @@enc_utf16 rescue return 0 end
+    end
+    hf = CreateFileW(fn, CFflag::GENERIC_READ, CFflag::FILE_SHARE_READ | CFflag::FILE_SHARE_WRITE,
+                     nil, CFflag::OPEN_EXISTING, CFflag::FILE_FLAG_BACKUP_SEMANTICS, 0)
     raise "getfilesize: Can not open file \"#{fn}\"" if hf == CFflag::INVALID_HANDLE_VALUE
     size = Large_Integer.new
     res = GetFileSizeEx(hf, size)
@@ -432,7 +455,6 @@ CloseHandle(HANDLE)
     CloseHandle(hf)
     size.to_i
   end
-
 end
 
 Win32ft = Win32Filetime

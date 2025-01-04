@@ -1,0 +1,173 @@
+#!/usr/bin/env ruby -w
+# encoding: UTF-8
+
+require 'openssl'
+require_relative '../lib/cfg'
+require_relative '../lib/win32_filetime'
+W = Win32ft
+
+$t00 = Time.now
+$num_succ = 0
+$num_exception = 0
+
+trap 'SIGINT' do
+  warn 'exit on Ctrl-C.'
+  exit 1
+end
+
+def getmd5(fn)
+  return '' if File.directory?(fn) || File.symlink?(fn)
+  md5 = OpenSSL::Digest.new('MD5')
+  File.open(fn, 'rb') do |f|
+    while d = f.read(4096)
+      md5.update(d)
+    end
+  end
+  md5.hexdigest
+end
+
+# @param f1 [String] src
+# @param f2 [String] dest
+# @param isfile [Boolean] file or dir type
+# @param force [Boolean] no check md5, size, time etc ..
+# @return [ Boolean ]
+def copyfiletime(f1, f2, isfile = true, force: false)
+  f1 = f1.gsub('/', '\\')
+  f2 = f2.gsub('/', '\\')
+
+  isfile = true if force
+
+  tc1, ta1, tm1, sz1 = W.getfiletime(f1, getsize: force ? false : isfile)
+  tc2, ta2, tm2, sz2 = W.getfiletime(f2, getsize: force ? false : isfile)
+  chk_size = if force
+      true
+    else
+      sz1 = 0 if sz1.nil?
+      sz2 = 0 if sz2.nil?
+      sz1 == sz2
+    end
+
+  chk_diff_time = if force
+      true
+    else
+      tc1 != tc2 || tm1 != tm2
+    end
+
+  if chk_size && chk_diff_time && File.readable?(f1) && File.readable?(f2)
+    unless force
+      return if sz1 && sz1 > 2 ** 20 * 200
+    end
+
+    chk_md5 = if force
+        true
+      elsif isfile && $diffmd5
+        md1 = getmd5(f1)
+        md2 = getmd5(f2)
+        md1 == md2
+      else
+        true
+      end
+    if chk_md5
+      tcx = [tc1, tc2].min
+      tax = [ta1, ta2].min
+      tmx = [tm1, tm2].min
+      ched = false
+      if [tcx, tmx] != [tc1, tm1]
+        res = W.setfiletime(f1, tcx, tax, tmx)
+        puts " <   #{f1}   CT:#{W.ft2st(W.ft2lft(tcx))}   MT:#{W.ft2st(W.ft2lft(tmx))}"
+        ched = true if res
+      end
+      if [tcx, tmx] != [tc2, tm2]
+        W.setfiletime(f2, tcx, tax, tmx)
+        puts "   > #{f2}   CT:#{W.ft2st(W.ft2lft(tcx))}   MT:#{W.ft2st(W.ft2lft(tmx))}"
+        ched = true if res
+      end
+      $num_succ += 1 if ched && $num_succ
+    end
+  end
+  true
+rescue Exception => e
+  $num_exception += 1
+  warn %(  --get Error #{e})
+  STDERR.puts e.backtrace
+end
+
+# @param dir_from [String]
+# @param dir_to [String]
+# @return [[Integer, Integer]]
+def copydirtimes(dir_from, dir_to)
+  c_ds = 0
+  c_fs = 0
+
+  fs1 = Dir.chdir(dir_from) { Dir.glob '*', File::FNM_DOTMATCH }
+  fs2 = Dir.chdir(dir_to) { Dir.glob '*', File::FNM_DOTMATCH }
+
+  fsx = fs1 & fs2
+  fsx.delete('.')
+  fsx.delete('..')
+
+  dirss = []
+  fnss = []
+
+  fsx.each do |fn|
+    f1 = File.join dir_from, fn
+    f2 = File.join dir_to, fn
+    if File.file?(f1) && File.file?(f2)
+      fnss << [f1, f2] unless CFG.checkSkipFile(fn)
+    elsif File.directory?(f1) && File.directory?(f2)
+      dirss << [f1, f2] unless CFG.checkSkipDir(fn)
+    end
+  end
+
+  warn %{ time: #{Time.now - $t00} succ: #{$num_succ}  ds: #{dirss.size}  fs: #{fnss.size}  dir: "#{dir_to}  ERROR: #{$num_exception}"}
+
+  fnss.each do |f1, f2|
+    res = copyfiletime(f1, f2)
+    c_fs += 1 if res
+    # p f2 if res
+  end
+
+  res = copyfiletime(dir_from, dir_to, false)
+  c_ds += 1 if res
+  # p [dir_to] if res
+
+  dirss.each do |f1, f2|
+    _d1, _f1 = copydirtimes(f1, f2)
+    c_ds += _d1
+    c_fs += _f1
+  end
+
+  [c_ds, c_fs]
+end
+
+def show_usage(st = 0)
+  warn %(Usage:\n  diff file size, reset old times for both.\nSyntax:\n  copydirtimes.rb [ -diffmd5 ] [ -force ] dir_from  dir_to)
+  exit st
+end
+
+def main
+  if (ARGV & %w{--help -h}).size > 0
+    show_usage 0
+  end
+  $diffmd5 = ARGV.delete('-diffmd5') ? true : false
+  $force = ARGV.delete('-force') ? true : false
+  if ARGV.size != 2
+    show_usage 1
+  end
+
+  dir_from, dir_to = ARGV[0], ARGV[1]
+  if File.file?(dir_from) && File.file?(dir_to)
+    copyfiletime(dir_from, dir_to, true, force: $force)
+    return
+  end
+
+  if !File.directory?(dir_from) || !File.directory?(dir_to)
+    warn %( Dir_from  Dir_to  must be directory)
+    show_usage 3
+  end
+
+  c_ds, c_fs = copydirtimes(dir_from, dir_to)
+  warn %(\nSUMMARY: Copy Dir times "#{dir_from}" -> "#{dir_to}". list dirs: #{c_ds}  files: #{c_fs}  reset: #{$num_succ}  ERROR: #{$num_exception})
+end
+
+main

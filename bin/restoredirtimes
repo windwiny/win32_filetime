@@ -7,6 +7,24 @@ require_relative '../lib/win32_filetime'
 
 W = Win32ft
 
+$fff = nil
+
+def info(fn, tc1 = '', ta1 = '', tm1 = '')
+  if $fff
+    if tc1[0] == '0'
+      tc1 = W.ft2st(W.str2ft(tc1))
+    end
+    if ta1[0] == '0'
+      ta1 = W.ft2st(W.str2ft(ta1))
+    end
+    if tm1[0] == '0'
+      tm1 = W.ft2st(W.str2ft(tm1))
+    end
+    ss = [fn, tc1, ta1, tm1].join('  ')
+    $fff.puts(ss)
+  end
+end
+
 def show_usage(st = 0)
   warn <<~HELP
 
@@ -17,15 +35,16 @@ def show_usage(st = 0)
           restoredirtimes.rb  [ -e encoding ]  [ -o ]  -p PAIR -p PAIR  f1.log f2.log ... 
 
          Params:
-          --lang, -e      encode   log file encoding, like UTF-8 | UTF-16LE | ... ,  default 'UTF-8'
-          --only-dir, -o  [bool]   only update directory, default 'false'
-          -p              PAIR     EXAMPLE:  str split by '|' ==>  <workdir>    <replace log line first subdir>
-                                      "d:\\dir1\\subdir1|subdir2\\\\"      cmd params end double \\
-                                      "d:\\dir1\\subdir1|subdir2"      
-                                      "d:\\dir1\\subdir|"                  not change
-                                      "d:\\dir1\\subdirx|?"                replace dir basename
-                                      "d:\\dir1\\subdirx|*"                full path replace
-                                   chdir to workdir, read line replace first subdir to find file
+          --lang, -e      encode      log file encoding, like UTF-8 | UTF-16LE | ... ,  default 'UTF-8'
+          --only-dir, -o  [bool]      only update directory, default 'false'
+          --log, -v       [dir|file]  write log file
+          --part, -p      PAIR        EXAMPLE:  str split by '|' ==> [ <workdir>, <replace log line first subdir> ]
+                                         "d:\\dir1\\subdir1|subdir2\\\\"      cmd params end double \\
+                                         "d:\\dir1\\subdir1|subdir2"      
+                                         "d:\\dir1\\subdir|"                  not change
+                                         "d:\\dir1\\subdirx|?"                replace dir basename
+                                         "d:\\dir1\\subdirx|*"                full path replace
+                                      chdir to workdir, read line replace first subdir to find file
 
        HELP
 
@@ -39,6 +58,7 @@ class ConfigStatus < BASIC_ConfigStatus
     @cfg_sleep_sec = 1
     @cfg_encoding = 'UTF-8'
     @cfg_only_dir = false
+    @cfg_v_log = false
 
     reinit
   end
@@ -62,6 +82,7 @@ class ConfigStatus < BASIC_ConfigStatus
     cfg_sleep_sec
     cfg_encoding
     cfg_only_dir
+    cfg_v_log
     st_t00
     st_rows
     st_rows_rec
@@ -145,7 +166,10 @@ def rolloldtime(pair_kvs, logf)
         fn = fn.sub(subdir, '') if subdir != ''
         fn = '.\\' if fn == ''
 
-        next if G.cfg_only_dir && !File.directory?(fn)
+        if G.cfg_only_dir && !File.directory?(fn)
+          info(%{"#{fn}" skip not dir })
+          next
+        end
 
         if File.file?(fn)
           G.st_num_file += 1
@@ -160,9 +184,9 @@ def rolloldtime(pair_kvs, logf)
 
         if format == 'hex' # ss =~ (0x\w{16}) (0x\w{16}) (0x\w{16}) (\d+)$/
           tc1, ta1, tm1, sz1 = ss.split
-          tc1 = tc1[2..]
-          ta1 = ta1[2..]
-          tm1 = tm1[2..]
+          #tc1 = tc1[2..]
+          #ta1 = ta1[2..]
+          #tm1 = tm1[2..]
         elsif format == 'str' #  tstr = '\d{4}\-\d{2}\-\d{2} \d{2}:\d{2}:\d{2}\.\d+'; ss =~ / (#{tstr}) (#{tstr}) (#{tstr}) (\d+)$/
           xx = ss.split
           tc1 = xx[0] + ' ' + xx[1]
@@ -184,6 +208,7 @@ def rolloldtime(pair_kvs, logf)
         end
         if cst.nil? || cst && cst.size.to_s == sz1
           begin
+            info(fn, tc1, ta1, tm1)
             res = W.setfiletime(fn, tc1, ta1, tm1)
             G.st_num_succ += 1 if res
           rescue StandardError
@@ -228,7 +253,8 @@ def main
     ['--lang', '-e', GetoptLong::REQUIRED_ARGUMENT],
     ['--only-dir', '-o', GetoptLong::OPTIONAL_ARGUMENT],
     ['--pair', '-p', GetoptLong::REQUIRED_ARGUMENT],
-    ['--help', '-h', GetoptLong::NO_ARGUMENT]
+    ['--log', '-v', GetoptLong::OPTIONAL_ARGUMENT],
+    ['--help', '-h', GetoptLong::NO_ARGUMENT],
   )
 
   pairs = []
@@ -254,6 +280,22 @@ def main
           warn %{\n ERROR!   --only-dir value bad true|false }
           exit 3
         end
+    when '--log'
+      G.cfg_v_log = true
+      if value
+        if File.directory?(value)
+          fn = File.join(value, "wft_#{Time.now.strftime('%M%S')}.log")
+        elsif File.file?(value) && File.writable?(value)
+          fn = value
+        else
+          fn = value
+        end
+      end
+      if !fn
+        fn = File.join(ENV['TMP'], "wft_#{Time.now.strftime('%M%S')}.log")
+      end
+      $fff = File.open(fn, 'w')
+      warn %{Logfile #{fn}}
     when '--pair'
       pairs << value
     end

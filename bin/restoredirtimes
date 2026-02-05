@@ -36,6 +36,7 @@ def show_usage(st = 0)
 
          Params:
           --lang, -e      encode      log file encoding, like UTF-8 | UTF-16LE | ... ,  default 'UTF-8'
+          --force, -f     [bool]      force update not same size
           --only-dir, -o  [bool]      only update directory, default 'false'
           --log, -v       [dir|file]  write log file
           --part, -p      PAIR        EXAMPLE:  str split by '|' ==> [ <workdir>, <replace log line first subdir> ]
@@ -58,6 +59,7 @@ class ConfigStatus < BASIC_ConfigStatus
     @cfg_sleep_sec = 1
     @cfg_encoding = 'UTF-8'
     @cfg_only_dir = false
+    @cfg_force = false
     @cfg_v_log = false
 
     reinit
@@ -82,6 +84,7 @@ class ConfigStatus < BASIC_ConfigStatus
     cfg_sleep_sec
     cfg_encoding
     cfg_only_dir
+    cfg_force
     cfg_v_log
     st_t00
     st_rows
@@ -206,7 +209,7 @@ def rolloldtime(pair_kvs, logf)
               nil
             end
         end
-        if cst.nil? || cst && cst.size.to_s == sz1
+        if cst.nil? || cst && (G.cfg_force || cst.size.to_s == sz1)
           begin
             info(fn, tc1, ta1, tm1)
             res = W.setfiletime(fn, tc1, ta1, tm1)
@@ -252,6 +255,7 @@ def main
   options = GetoptLong.new(
     ['--lang', '-e', GetoptLong::REQUIRED_ARGUMENT],
     ['--only-dir', '-o', GetoptLong::OPTIONAL_ARGUMENT],
+    ['--force', '-f', GetoptLong::OPTIONAL_ARGUMENT],
     ['--pair', '-p', GetoptLong::REQUIRED_ARGUMENT],
     ['--log', '-v', GetoptLong::OPTIONAL_ARGUMENT],
     ['--help', '-h', GetoptLong::NO_ARGUMENT],
@@ -278,6 +282,17 @@ def main
           false
         else
           warn %{\n ERROR!   --only-dir value bad true|false }
+          exit 3
+        end
+    when '--force'
+      G.cfg_force = if value.empty?
+          true
+        elsif value =~ /true/i
+          true
+        elsif value =~ /false/i
+          false
+        else
+          warn %{\n ERROR!   --force value bad true|false }
           exit 3
         end
     when '--log'
